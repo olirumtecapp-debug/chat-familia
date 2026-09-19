@@ -6,6 +6,7 @@ import { DEFAULT_AVATAR, GROUP_AVATAR, optimizeImageForChat } from "@/lib/emojiA
 import { EmojiPicker } from "@/components/EmojiPicker";
 import { CallModal } from "@/components/CallModal";
 import { trpc } from "@/lib/trpc";
+import { GroupMembersModal } from "@/components/GroupMembersModal";
 import {
   ArrowLeft,
   CheckCheck,
@@ -16,6 +17,7 @@ import {
   Phone,
   Send,
   Smile,
+  Users,
   Video,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -32,6 +34,7 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
   const [inputText, setInputText] = useState("");
   const [isUploading, setIsUploading] = useState(false);
   const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [currentCallType, setCurrentCallType] = useState<"audio" | "video">("audio");
   const [isIncomingCall, setIsIncomingCall] = useState(false);
 
@@ -193,28 +196,54 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
     <div className="flex flex-col h-full w-full bg-[#efeae2] dark:bg-[#0b141a] relative overflow-hidden">
       {/* Header Estilo WhatsApp */}
       <div className="h-14 sm:h-16 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 flex items-center justify-between shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-2.5 sm:gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           <button
             onClick={onBackMobile}
-            className="md:hidden p-1.5 -ml-1 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full cursor-pointer"
+            className="md:hidden p-1.5 -ml-1 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full cursor-pointer shrink-0"
             aria-label="Voltar"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
 
-          <div className="relative">
-            <img src={avatar} alt={title} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-1 ring-slate-300" />
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-[#202c33]" />
-          </div>
+          <div
+            onClick={() => isGroup && setIsGroupModalOpen(true)}
+            className={`flex items-center gap-2.5 sm:gap-3 min-w-0 ${
+              isGroup ? "cursor-pointer hover:opacity-85 transition-opacity" : ""
+            }`}
+            title={isGroup ? "Clique para gerenciar participantes do grupo" : undefined}
+          >
+            <div className="relative shrink-0">
+              <img src={avatar} alt={title} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-1 ring-slate-300" />
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-[#202c33]" />
+            </div>
 
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{title}</h2>
-            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</p>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1.5">
+                {title}
+                {isGroup && (
+                  <span className="text-[10px] font-medium px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300">
+                    Grupo
+                  </span>
+                )}
+              </h2>
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
+                {subtitle} {isGroup && "• Toque p/ gerenciar"}
+              </p>
+            </div>
           </div>
         </div>
 
-        {/* Botões de Chamada de Telefone (Áudio) e Vídeo */}
-        <div className="flex items-center gap-1">
+        {/* Botões de Ação do Header */}
+        <div className="flex items-center gap-1 shrink-0">
+          {isGroup && (
+            <button
+              onClick={() => setIsGroupModalOpen(true)}
+              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
+              title="Participantes do Grupo (Adicionar / Excluir)"
+            >
+              <Users className="w-4.5 h-4.5" />
+            </button>
+          )}
           <button
             onClick={() => handleStartCall("audio")}
             className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
@@ -424,6 +453,20 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
           callType={currentCallType}
           isIncoming={isIncomingCall}
           incomingCallSession={incomingCallQuery.data}
+        />
+      )}
+
+      {/* Modal de Participantes do Grupo (Adicionar / Excluir) */}
+      {isGroup && conv && (
+        <GroupMembersModal
+          isOpen={isGroupModalOpen}
+          onClose={() => setIsGroupModalOpen(false)}
+          conversationId={conversationId}
+          groupName={conv.name || "Grupo da Família"}
+          groupAvatar={conv.avatarUrl || GROUP_AVATAR}
+          currentUserId={currentUserId}
+          members={conv.members || []}
+          onMemberRemoved={onBackMobile}
         />
       )}
     </div>

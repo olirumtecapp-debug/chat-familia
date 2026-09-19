@@ -1,7 +1,8 @@
 import { Input } from "@/components/ui/input";
+import { useTheme } from "@/contexts/ThemeContext";
 import { DEFAULT_AVATAR, GROUP_AVATAR } from "@/lib/emojiAvatars";
 import { trpc } from "@/lib/trpc";
-import { CheckCheck, Heart, LogOut, MessageSquarePlus, Search, UserCog, Users } from "lucide-react";
+import { CheckCheck, Heart, LogOut, MessageSquarePlus, Moon, Search, Sun, UserCog, Users } from "lucide-react";
 import React, { useState } from "react";
 
 interface SidebarProps {
@@ -26,6 +27,7 @@ export function Sidebar({
   onLogout,
 }: SidebarProps) {
   const [searchTerm, setSearchTerm] = useState("");
+  const { theme, toggleTheme } = useTheme();
 
   const utils = trpc.useUtils();
   const conversationsQuery = trpc.conversations.list.useQuery(undefined, {
@@ -79,8 +81,15 @@ export function Sidebar({
 
         <div className="flex items-center gap-1 text-slate-600 dark:text-slate-300">
           <button
+            onClick={toggleTheme}
+            className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-amber-400 rounded-full transition cursor-pointer"
+            title={theme === "dark" ? "Mudar para Modo Claro" : "Mudar para Modo Escuro (Noturno)"}
+          >
+            {theme === "dark" ? <Sun className="w-5 h-5 text-amber-400" /> : <Moon className="w-5 h-5" />}
+          </button>
+          <button
             onClick={onOpenNewChat}
-            className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition"
+            className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
             title="Nova conversa ou grupo"
           >
             <MessageSquarePlus className="w-5 h-5 text-emerald-600" />

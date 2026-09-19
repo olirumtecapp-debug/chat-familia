@@ -381,6 +381,16 @@ export async function getConversationDetails(conversationId: number, userId: num
   };
 }
 
+
+export async function removeMemberFromConversation(conversationId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .delete(conversationMembers)
+    .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
+}
+
 export async function markConversationAsRead(conversationId: number, userId: number) {
   const db = await getDb();
   if (!db) return;

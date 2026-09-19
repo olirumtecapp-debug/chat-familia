@@ -215,7 +215,48 @@ export const appRouter = router({
         if (!conv) {
           throw new TRPCError({ code: "FORBIDDEN", message: "Apenas membros podem adicionar participantes" });
         }
+        const targetUser = await db.getUserById(input.targetUserId);
+        if (!targetUser) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+        }
         await db.addMemberToConversation(input.conversationId, input.targetUserId);
+
+        await db.sendMessage({
+          conversationId: input.conversationId,
+          senderId: ctx.user.id,
+          content: `👋 ${targetUser.name || "Novo membro"} entrou no grupo`,
+        });
+
+        return { success: true };
+      }),
+
+    // Remover membro do grupo (ou sair do grupo)
+    removeMember: protectedProcedure
+      .input(z.object({ conversationId: z.number(), targetUserId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const conv = await db.getConversationDetails(input.conversationId, ctx.user.id);
+        if (!conv) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Acesso não autorizado a esta conversa" });
+        }
+
+        const targetUser = await db.getUserById(input.targetUserId);
+        if (!targetUser) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário não encontrado" });
+        }
+
+        await db.removeMemberFromConversation(input.conversationId, input.targetUserId);
+
+        const isSelf = input.targetUserId === ctx.user.id;
+        const notice = isSelf
+          ? `🚪 ${targetUser.name || "Um membro"} saiu do grupo`
+          : `🚪 ${targetUser.name || "Um membro"} foi removido(a) do grupo por ${ctx.user.name || "um participante"}`;
+
+        await db.sendMessage({
+          conversationId: input.conversationId,
+          senderId: ctx.user.id,
+          content: notice,
+        });
+
         return { success: true };
       }),
   }),

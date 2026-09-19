@@ -367,6 +367,11 @@ async function getConversationDetails(conversationId, userId) {
     members
   };
 }
+async function removeMemberFromConversation(conversationId, userId) {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(conversationMembers).where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
+}
 async function markConversationAsRead(conversationId, userId) {
   const db = await getDb();
   if (!db) return;
@@ -1189,7 +1194,36 @@ var appRouter = router({
       if (!conv) {
         throw new TRPCError3({ code: "FORBIDDEN", message: "Apenas membros podem adicionar participantes" });
       }
+      const targetUser = await getUserById(input.targetUserId);
+      if (!targetUser) {
+        throw new TRPCError3({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o encontrado" });
+      }
       await addMemberToConversation(input.conversationId, input.targetUserId);
+      await sendMessage({
+        conversationId: input.conversationId,
+        senderId: ctx.user.id,
+        content: `\u{1F44B} ${targetUser.name || "Novo membro"} entrou no grupo`
+      });
+      return { success: true };
+    }),
+    // Remover membro do grupo (ou sair do grupo)
+    removeMember: protectedProcedure.input(z2.object({ conversationId: z2.number(), targetUserId: z2.number() })).mutation(async ({ ctx, input }) => {
+      const conv = await getConversationDetails(input.conversationId, ctx.user.id);
+      if (!conv) {
+        throw new TRPCError3({ code: "FORBIDDEN", message: "Acesso n\xE3o autorizado a esta conversa" });
+      }
+      const targetUser = await getUserById(input.targetUserId);
+      if (!targetUser) {
+        throw new TRPCError3({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o encontrado" });
+      }
+      await removeMemberFromConversation(input.conversationId, input.targetUserId);
+      const isSelf = input.targetUserId === ctx.user.id;
+      const notice = isSelf ? `\u{1F6AA} ${targetUser.name || "Um membro"} saiu do grupo` : `\u{1F6AA} ${targetUser.name || "Um membro"} foi removido(a) do grupo por ${ctx.user.name || "um participante"}`;
+      await sendMessage({
+        conversationId: input.conversationId,
+        senderId: ctx.user.id,
+        content: notice
+      });
       return { success: true };
     })
   }),
