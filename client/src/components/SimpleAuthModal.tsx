@@ -27,6 +27,7 @@ export function SimpleAuthModal({ isOpen, onSuccess }: SimpleAuthModalProps) {
       if (data.token) {
         try {
           sessionStorage.setItem("manus-cookie", `app_session_id=${data.token}`);
+          localStorage.setItem("manus-cookie", `app_session_id=${data.token}`);
         } catch {}
       }
       utils.auth.me.setData(undefined, data.user);

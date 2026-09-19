@@ -194,6 +194,95 @@ export async function findDirectConversation(userA: number, userB: number) {
   return null;
 }
 
+export async function ensureUserInFamilyGroup(userId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  try {
+    // 1. Procurar se já existe o grupo "🏡 Grupo da Família"
+    const existingGroups = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.type, "group"))
+      .limit(10);
+
+    let familyGroup = existingGroups.find((g) => g.name?.includes("Família")) || existingGroups[0];
+
+    if (!familyGroup) {
+      // Criar o grupo padrão da família
+      const [inserted] = await db.insert(conversations).values({
+        type: "group",
+        name: "🏡 Grupo da Família",
+        description: "Nosso espaço oficial para bater papo, mandar fotos e dar bom dia!",
+        avatarUrl: "https://api.dicebear.com/7.x/bottts/svg?seed=FamiliaReunida",
+        createdById: userId,
+        lastMessageText: "Bem-vindos ao Grupo da Família!",
+        lastMessageAt: new Date(),
+      });
+      const groupId = inserted.insertId;
+      familyGroup = { id: groupId } as any;
+
+      // Inserir mensagem de boas-vindas
+      await db.insert(messages).values({
+        conversationId: groupId,
+        senderId: userId,
+        content: "👋 Bem-vindos ao cantinho oficial da nossa família no CasaChat! Sintam-se em casa para conversar e mandar fotos ❤️",
+        type: "system",
+        createdAt: new Date(),
+      });
+    }
+
+    // 2. Verificar se o usuário atual já é membro
+    const membership = await db
+      .select()
+      .from(conversationMembers)
+      .where(
+        and(
+          eq(conversationMembers.conversationId, familyGroup.id),
+          eq(conversationMembers.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (membership.length === 0) {
+      await db.insert(conversationMembers).values({
+        conversationId: familyGroup.id,
+        userId,
+        role: "member",
+        joinedAt: new Date(),
+        lastReadAt: new Date(),
+      });
+    }
+
+    // 3. Garantir que TODOS os outros usuários cadastrados também façam parte do grupo da família
+    const allUsers = await db.select({ id: users.id }).from(users);
+    const currentMembers = await db
+      .select({ userId: conversationMembers.userId })
+      .from(conversationMembers)
+      .where(eq(conversationMembers.conversationId, familyGroup.id));
+
+    const memberSet = new Set(currentMembers.map((m) => m.userId));
+    for (const u of allUsers) {
+      if (!memberSet.has(u.id)) {
+        try {
+          await db.insert(conversationMembers).values({
+            conversationId: familyGroup.id,
+            userId: u.id,
+            role: "member",
+            joinedAt: new Date(),
+            lastReadAt: new Date(),
+          });
+        } catch {}
+      }
+    }
+
+    return familyGroup.id;
+  } catch (err) {
+    console.error("[Database] Error in ensureUserInFamilyGroup:", err);
+    return null;
+  }
+}
+
 export async function listUserConversations(userId: number) {
   const db = await getDb();
   if (!db) return [];

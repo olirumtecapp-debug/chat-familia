@@ -27,11 +27,24 @@ export function Sidebar({
 }: SidebarProps) {
   const [searchTerm, setSearchTerm] = useState("");
 
+  const utils = trpc.useUtils();
   const conversationsQuery = trpc.conversations.list.useQuery(undefined, {
     refetchInterval: 3500,
   });
 
+  const usersQuery = trpc.users.list.useQuery(undefined, {
+    refetchInterval: 8000,
+  });
+
+  const startDirectMutation = trpc.conversations.startDirect.useMutation({
+    onSuccess: (data) => {
+      utils.conversations.list.invalidate();
+      onSelectConversation(data.conversationId);
+    },
+  });
+
   const convList = conversationsQuery.data || [];
+  const otherUsers = (usersQuery.data || []).filter((u) => !u.isSelf);
 
   const filtered = convList.filter((c) => {
     if (c.type === "group") {
@@ -102,18 +115,87 @@ export function Sidebar({
         </div>
       </div>
 
+      {/* Barra de Membros Cadastrados da Família */}
+      {otherUsers.length > 0 && (
+        <div className="px-3 py-2 bg-slate-50/70 dark:bg-[#182229] border-b border-slate-100 dark:border-slate-800/60 shrink-0">
+          <div className="flex items-center justify-between mb-1.5 px-0.5">
+            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
+              <Heart className="w-3 h-3 text-emerald-500 fill-emerald-500" />
+              Familiares Conectados ({otherUsers.length})
+            </span>
+            <button
+              onClick={onOpenNewChat}
+              className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+            >
+              + Novo Grupo
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+            {otherUsers.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => startDirectMutation.mutate({ targetUserId: u.id })}
+                disabled={startDirectMutation.isPending}
+                className="flex flex-col items-center gap-1 group shrink-0 focus:outline-none cursor-pointer"
+                title={`Conversar com ${u.name}`}
+              >
+                <div className="relative">
+                  <img
+                    src={u.avatarUrl || DEFAULT_AVATAR}
+                    alt={u.name || "Parente"}
+                    className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500/80 group-hover:scale-105 group-hover:ring-emerald-600 transition shadow-xs"
+                  />
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-[#182229] rounded-full" />
+                </div>
+                <span className="text-[10px] font-medium text-slate-700 dark:text-slate-300 max-w-[54px] truncate text-center group-hover:text-emerald-600">
+                  {u.name?.split(" ")[0] || "Parente"}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Lista de Conversas Recentes */}
       <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/40 overscroll-contain">
         {filtered.length === 0 ? (
-          <div className="p-6 text-center text-slate-400">
-            <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Nenhuma conversa encontrada</p>
-            <button
-              onClick={onOpenNewChat}
-              className="mt-3 text-xs text-emerald-600 font-semibold hover:underline"
-            >
-              + Iniciar conversa ou criar grupo
-            </button>
+          <div className="p-6 text-center text-slate-400 space-y-4">
+            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+              <Users className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-700 dark:text-slate-200">Família Reunida!</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-[240px] mx-auto">
+                {otherUsers.length > 0
+                  ? "Toque em um familiar acima ou abaixo para começar a conversar:"
+                  : "Aguardando outros familiares entrarem pelo link!"}
+              </p>
+            </div>
+
+            {otherUsers.length > 0 && (
+              <div className="space-y-1.5 text-left pt-2">
+                {otherUsers.slice(0, 5).map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => startDirectMutation.mutate({ targetUserId: u.id })}
+                    disabled={startDirectMutation.isPending}
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 transition border border-slate-100 dark:border-slate-700 cursor-pointer"
+                  >
+                    <img
+                      src={u.avatarUrl || DEFAULT_AVATAR}
+                      alt={u.name || ""}
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{u.name}</p>
+                      <p className="text-[10px] text-slate-400 truncate">{u.statusMessage || "Disponível"}</p>
+                    </div>
+                    <span className="text-[11px] font-bold text-emerald-600">Conversar</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           filtered.map((conv) => {

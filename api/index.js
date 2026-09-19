@@ -25,8 +25,20 @@ var decodeOAuthState = (state) => {
   return { redirectUri: decoded };
 };
 
-// server/_core/oauth.ts
-import { parse as parseCookieHeader2 } from "cookie";
+// shared/_core/errors.ts
+var HttpError = class extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.statusCode = statusCode;
+    this.name = "HttpError";
+  }
+};
+var ForbiddenError = (msg) => new HttpError(403, msg);
+
+// server/_core/sdk.ts
+import axios from "axios";
+import { parse as parseCookieHeader } from "cookie";
+import { SignJWT, jwtVerify } from "jose";
 
 // server/db.ts
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -88,8 +100,8 @@ var messageReactions = mysqlTable("message_reactions", {
 
 // server/_core/env.ts
 var ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
+  appId: process.env.VITE_APP_ID || "casachat_family",
+  cookieSecret: process.env.JWT_SECRET || "casachat_family_secret_key_2026",
   databaseUrl: process.env.DATABASE_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
@@ -232,6 +244,70 @@ async function findDirectConversation(userA, userB) {
     }
   }
   return null;
+}
+async function ensureUserInFamilyGroup(userId) {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const existingGroups = await db.select().from(conversations).where(eq(conversations.type, "group")).limit(10);
+    let familyGroup = existingGroups.find((g) => g.name?.includes("Fam\xEDlia")) || existingGroups[0];
+    if (!familyGroup) {
+      const [inserted] = await db.insert(conversations).values({
+        type: "group",
+        name: "\u{1F3E1} Grupo da Fam\xEDlia",
+        description: "Nosso espa\xE7o oficial para bater papo, mandar fotos e dar bom dia!",
+        avatarUrl: "https://api.dicebear.com/7.x/bottts/svg?seed=FamiliaReunida",
+        createdById: userId,
+        lastMessageText: "Bem-vindos ao Grupo da Fam\xEDlia!",
+        lastMessageAt: /* @__PURE__ */ new Date()
+      });
+      const groupId = inserted.insertId;
+      familyGroup = { id: groupId };
+      await db.insert(messages).values({
+        conversationId: groupId,
+        senderId: userId,
+        content: "\u{1F44B} Bem-vindos ao cantinho oficial da nossa fam\xEDlia no CasaChat! Sintam-se em casa para conversar e mandar fotos \u2764\uFE0F",
+        type: "system",
+        createdAt: /* @__PURE__ */ new Date()
+      });
+    }
+    const membership = await db.select().from(conversationMembers).where(
+      and(
+        eq(conversationMembers.conversationId, familyGroup.id),
+        eq(conversationMembers.userId, userId)
+      )
+    ).limit(1);
+    if (membership.length === 0) {
+      await db.insert(conversationMembers).values({
+        conversationId: familyGroup.id,
+        userId,
+        role: "member",
+        joinedAt: /* @__PURE__ */ new Date(),
+        lastReadAt: /* @__PURE__ */ new Date()
+      });
+    }
+    const allUsers = await db.select({ id: users.id }).from(users);
+    const currentMembers = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(eq(conversationMembers.conversationId, familyGroup.id));
+    const memberSet = new Set(currentMembers.map((m) => m.userId));
+    for (const u of allUsers) {
+      if (!memberSet.has(u.id)) {
+        try {
+          await db.insert(conversationMembers).values({
+            conversationId: familyGroup.id,
+            userId: u.id,
+            role: "member",
+            joinedAt: /* @__PURE__ */ new Date(),
+            lastReadAt: /* @__PURE__ */ new Date()
+          });
+        } catch {
+        }
+      }
+    }
+    return familyGroup.id;
+  } catch (err) {
+    console.error("[Database] Error in ensureUserInFamilyGroup:", err);
+    return null;
+  }
 }
 async function listUserConversations(userId) {
   const db = await getDb();
@@ -385,38 +461,7 @@ async function addMemberToConversation(conversationId, targetUserId) {
   }
 }
 
-// server/_core/cookies.ts
-function isSecureRequest(req) {
-  if (req.protocol === "https") return true;
-  const forwardedProto = req.headers["x-forwarded-proto"];
-  if (!forwardedProto) return false;
-  const protoList = Array.isArray(forwardedProto) ? forwardedProto : forwardedProto.split(",");
-  return protoList.some((proto) => proto.trim().toLowerCase() === "https");
-}
-function getSessionCookieOptions(req) {
-  const isSecure = isSecureRequest(req);
-  return {
-    httpOnly: true,
-    path: "/",
-    sameSite: isSecure ? "none" : "lax",
-    secure: isSecure
-  };
-}
-
-// shared/_core/errors.ts
-var HttpError = class extends Error {
-  constructor(statusCode, message) {
-    super(message);
-    this.statusCode = statusCode;
-    this.name = "HttpError";
-  }
-};
-var ForbiddenError = (msg) => new HttpError(403, msg);
-
 // server/_core/sdk.ts
-import axios from "axios";
-import { parse as parseCookieHeader } from "cookie";
-import { SignJWT, jwtVerify } from "jose";
 var isNonEmptyString = (value) => typeof value === "string" && value.length > 0;
 var EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 var GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
@@ -530,8 +575,8 @@ var SDKServer = class {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId,
-        name: options.name || ""
+        appId: ENV.appId || "casachat_family",
+        name: options.name || "Membro da Fam\xEDlia"
       },
       options
     );
@@ -543,8 +588,8 @@ var SDKServer = class {
     const secretKey = this.getSessionSecret();
     return new SignJWT({
       openId: payload.openId,
-      appId: payload.appId,
-      name: payload.name
+      appId: payload.appId || "casachat_family",
+      name: payload.name || "Membro da Fam\xEDlia"
     }).setProtectedHeader({ alg: "HS256", typ: "JWT" }).setExpirationTime(expirationSeconds).sign(secretKey);
   }
   async verifySession(cookieValue) {
@@ -558,14 +603,14 @@ var SDKServer = class {
         algorithms: ["HS256"]
       });
       const { openId, appId, name } = payload;
-      if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
-        console.warn("[Auth] Session payload missing required fields");
+      if (!isNonEmptyString(openId)) {
+        console.warn("[Auth] Session payload missing required openId");
         return null;
       }
       return {
         openId,
-        appId,
-        name
+        appId: isNonEmptyString(appId) ? appId : ENV.appId || "casachat_family",
+        name: isNonEmptyString(name) ? name : "Membro da Fam\xEDlia"
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -659,6 +704,42 @@ function buildCronUser(userInfo) {
   };
 }
 var sdk = new SDKServer();
+
+// server/_core/context.ts
+async function createContext(opts) {
+  let user = null;
+  try {
+    user = await sdk.authenticateRequest(opts.req);
+  } catch (error) {
+    user = null;
+  }
+  return {
+    req: opts.req,
+    res: opts.res,
+    user
+  };
+}
+
+// server/_core/oauth.ts
+import { parse as parseCookieHeader2 } from "cookie";
+
+// server/_core/cookies.ts
+function isSecureRequest(req) {
+  if (req.protocol === "https") return true;
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  if (!forwardedProto) return false;
+  const protoList = Array.isArray(forwardedProto) ? forwardedProto : forwardedProto.split(",");
+  return protoList.some((proto) => proto.trim().toLowerCase() === "https");
+}
+function getSessionCookieOptions(req) {
+  const isSecure = isSecureRequest(req);
+  return {
+    httpOnly: true,
+    path: "/",
+    sameSite: isSecure ? "none" : "lax",
+    secure: isSecure
+  };
+}
 
 // server/_core/oauth.ts
 function getQueryParam(req, key) {
@@ -987,6 +1068,11 @@ var appRouter = router({
       if (!user) {
         throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel autenticar o usu\xE1rio" });
       }
+      try {
+        await ensureUserInFamilyGroup(user.id);
+      } catch (e) {
+        console.error("[Login] Failed to join family group:", e);
+      }
       const sessionToken = await sdk.createSessionToken(user.openId, {
         name: user.name || name
       });
@@ -1038,6 +1124,11 @@ var appRouter = router({
   conversations: router({
     // Listar conversas do usuário logado
     list: protectedProcedure.query(async ({ ctx }) => {
+      try {
+        await ensureUserInFamilyGroup(ctx.user.id);
+      } catch (e) {
+        console.error("[Conversations] Failed to ensure family group:", e);
+      }
       return listUserConversations(ctx.user.id);
     }),
     // Obter detalhes de uma conversa
@@ -1274,21 +1365,6 @@ setInterval(() => {
     }
   });
 }, 3e4);
-
-// server/_core/context.ts
-async function createContext(opts) {
-  let user = null;
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    user = null;
-  }
-  return {
-    req: opts.req,
-    res: opts.res,
-    user
-  };
-}
 
 // api/index.ts
 var app = express();

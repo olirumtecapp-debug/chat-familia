@@ -63,6 +63,13 @@ export const appRouter = router({
           throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível autenticar o usuário" });
         }
 
+        // Garante que o usuário esteja automaticamente no Grupo da Família
+        try {
+          await db.ensureUserInFamilyGroup(user.id);
+        } catch (e) {
+          console.error("[Login] Failed to join family group:", e);
+        }
+
         // Emitir cookie de sessão assinado
         const sessionToken = await sdk.createSessionToken(user.openId, {
           name: user.name || name,
@@ -123,6 +130,11 @@ export const appRouter = router({
   conversations: router({
     // Listar conversas do usuário logado
     list: protectedProcedure.query(async ({ ctx }) => {
+      try {
+        await db.ensureUserInFamilyGroup(ctx.user.id);
+      } catch (e) {
+        console.error("[Conversations] Failed to ensure family group:", e);
+      }
       return db.listUserConversations(ctx.user.id);
     }),
 
