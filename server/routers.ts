@@ -1,13 +1,97 @@
 import { COOKIE_NAME } from "@shared/const";
+import { TRPCError } from "@trpc/server";
+import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { sdk } from "./_core/sdk";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
+import * as db from "./db";
+import { storagePut } from "./storage";
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
+
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query((opts) => opts.ctx.user),
+
+    // Cadastro ou Login Simples de Família (apenas nome e email)
+    loginSimple: publicProcedure
+      .input(
+        z.object({
+          name: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
+          email: z.string().email("Email inválido"),
+          statusMessage: z.string().optional(),
+          avatarUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const email = input.email.trim().toLowerCase();
+        const name = input.name.trim();
+
+        // Verificar se usuário já existe com esse email
+        let user = await db.getUserByEmail(email);
+
+        if (!user) {
+          // Gerar openId determinístico e seguro para contas simples
+          const openId = `family_${Buffer.from(email).toString("hex").slice(0, 32)}`;
+          await db.upsertUser({
+            openId,
+            name,
+            email,
+            statusMessage: input.statusMessage || "Oi família, estou usando o CasaChat!",
+            avatarUrl: input.avatarUrl || null,
+            loginMethod: "family_simple",
+            lastSignedIn: new Date(),
+          });
+          user = await db.getUserByEmail(email);
+        } else {
+          // Atualiza dados e último login
+          await db.upsertUser({
+            openId: user.openId,
+            name: name || user.name || "Membro da Família",
+            email: user.email,
+            statusMessage: input.statusMessage || user.statusMessage || "Oi família, estou usando o CasaChat!",
+            avatarUrl: input.avatarUrl || user.avatarUrl,
+            lastSignedIn: new Date(),
+          });
+          user = await db.getUserByEmail(email);
+        }
+
+        if (!user) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Não foi possível autenticar o usuário" });
+        }
+
+        // Emitir cookie de sessão assinado
+        const sessionToken = await sdk.createSessionToken(user.openId, {
+          name: user.name || name,
+        });
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, {
+          ...cookieOptions,
+          maxAge: 365 * 24 * 60 * 60 * 1000, // 1 ano
+        });
+
+        return {
+          user,
+          token: sessionToken,
+        };
+      }),
+
+    // Atualizar perfil do usuário conectado
+    updateProfile: protectedProcedure
+      .input(
+        z.object({
+          name: z.string().min(2).optional(),
+          statusMessage: z.string().max(250).optional(),
+          avatarUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        await db.updateProfile(ctx.user.id, input);
+        return db.getUserById(ctx.user.id);
+      }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -17,12 +101,187 @@ export const appRouter = router({
     }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  // Usuários da Família
+  users: router({
+    list: protectedProcedure.query(async ({ ctx }) => {
+      const all = await db.listAllUsers();
+      // Retorna todos os usuários exceto ele mesmo (para iniciar conversa) e lista geral
+      return all.map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        avatarUrl: u.avatarUrl,
+        statusMessage: u.statusMessage,
+        isSelf: u.id === ctx.user.id,
+      }));
+    }),
+  }),
+
+  // Conversas
+  conversations: router({
+    // Listar conversas do usuário logado
+    list: protectedProcedure.query(async ({ ctx }) => {
+      return db.listUserConversations(ctx.user.id);
+    }),
+
+    // Obter detalhes de uma conversa
+    get: protectedProcedure
+      .input(z.object({ conversationId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const conv = await db.getConversationDetails(input.conversationId, ctx.user.id);
+        if (!conv) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Conversa não encontrada ou acesso não autorizado" });
+        }
+        return conv;
+      }),
+
+    // Criar conversa direta (ou abrir existente)
+    startDirect: protectedProcedure
+      .input(z.object({ targetUserId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        if (input.targetUserId === ctx.user.id) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Você já está em contato consigo mesmo" });
+        }
+
+        const existingId = await db.findDirectConversation(ctx.user.id, input.targetUserId);
+        if (existingId) {
+          return { conversationId: existingId, isNew: false };
+        }
+
+        const target = await db.getUserById(input.targetUserId);
+        if (!target) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Usuário alvo não encontrado" });
+        }
+
+        const newId = await db.createConversation({
+          type: "direct",
+          createdById: ctx.user.id,
+          memberUserIds: [input.targetUserId],
+        });
+
+        return { conversationId: newId, isNew: true };
+      }),
+
+    // Criar Grupo familiar
+    createGroup: protectedProcedure
+      .input(
+        z.object({
+          name: z.string().min(2, "Nome do grupo deve ter pelo menos 2 caracteres"),
+          description: z.string().optional(),
+          memberUserIds: z.array(z.number()).min(1, "Adicione pelo menos 1 membro"),
+          avatarUrl: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const conversationId = await db.createConversation({
+          type: "group",
+          name: input.name,
+          description: input.description,
+          avatarUrl: input.avatarUrl,
+          createdById: ctx.user.id,
+          memberUserIds: input.memberUserIds,
+        });
+
+        return { conversationId };
+      }),
+
+    // Marcar conversa como lida
+    markAsRead: protectedProcedure
+      .input(z.object({ conversationId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        await db.markConversationAsRead(input.conversationId, ctx.user.id);
+        return { success: true };
+      }),
+
+    // Adicionar membro ao grupo
+    addMember: protectedProcedure
+      .input(z.object({ conversationId: z.number(), targetUserId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const conv = await db.getConversationDetails(input.conversationId, ctx.user.id);
+        if (!conv) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Apenas membros podem adicionar participantes" });
+        }
+        await db.addMemberToConversation(input.conversationId, input.targetUserId);
+        return { success: true };
+      }),
+  }),
+
+  // Mensagens
+  messages: router({
+    list: protectedProcedure
+      .input(z.object({ conversationId: z.number(), limit: z.number().optional() }))
+      .query(async ({ ctx, input }) => {
+        // Valida se o usuário é participante
+        const conv = await db.getConversationDetails(input.conversationId, ctx.user.id);
+        if (!conv) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Sem acesso a esta conversa" });
+        }
+        return db.listConversationMessages(input.conversationId, input.limit ?? 100);
+      }),
+
+    send: protectedProcedure
+      .input(
+        z.object({
+          conversationId: z.number(),
+          content: z.string().optional(),
+          mediaUrl: z.string().optional(),
+          mediaType: z.string().optional(),
+          fileName: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!input.content && !input.mediaUrl) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Mensagem não pode ser vazia" });
+        }
+
+        const conv = await db.getConversationDetails(input.conversationId, ctx.user.id);
+        if (!conv) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Sem acesso a esta conversa" });
+        }
+
+        const messageId = await db.sendMessage({
+          conversationId: input.conversationId,
+          senderId: ctx.user.id,
+          content: input.content,
+          mediaUrl: input.mediaUrl,
+          mediaType: input.mediaType,
+          fileName: input.fileName,
+        });
+
+        return { messageId, success: true };
+      }),
+
+    react: protectedProcedure
+      .input(z.object({ messageId: z.number(), emoji: z.string().min(1) }))
+      .mutation(async ({ ctx, input }) => {
+        await db.toggleMessageReaction({
+          messageId: input.messageId,
+          userId: ctx.user.id,
+          emoji: input.emoji,
+        });
+        return { success: true };
+      }),
+
+    // Upload de arquivo ou foto base64
+    uploadMedia: protectedProcedure
+      .input(
+        z.object({
+          fileName: z.string(),
+          contentType: z.string(),
+          base64Data: z.string(), // payload base64 enviado pelo cliente
+        })
+      )
+      .mutation(async ({ input }) => {
+        const buffer = Buffer.from(input.base64Data, "base64");
+        const safeName = input.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
+        const relKey = `chat-media/${Date.now()}_${safeName}`;
+        const result = await storagePut(relKey, buffer, input.contentType);
+        return {
+          url: result.url,
+          key: result.key,
+        };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
