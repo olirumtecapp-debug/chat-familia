@@ -1,4 +1,5 @@
 import { Input } from "@/components/ui/input";
+import { DEFAULT_AVATAR, GROUP_AVATAR } from "@/lib/emojiAvatars";
 import { trpc } from "@/lib/trpc";
 import { CheckCheck, Heart, LogOut, MessageSquarePlus, Search, UserCog, Users } from "lucide-react";
 import React, { useState } from "react";
@@ -41,9 +42,9 @@ export function Sidebar({
   });
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-[#111b21] border-r border-slate-200 dark:border-slate-800">
+    <div className="flex flex-col h-full w-full overflow-hidden bg-white dark:bg-[#111b21] border-r border-slate-200 dark:border-slate-800">
       {/* Topo do Usuário Conectado */}
-      <div className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] px-4 flex items-center justify-between shrink-0 border-b border-slate-200 dark:border-slate-800">
+      <div className="h-14 sm:h-16 bg-[#f0f2f5] dark:bg-[#202c33] px-3 sm:px-4 flex items-center justify-between shrink-0 border-b border-slate-200 dark:border-slate-800">
         <div
           onClick={onOpenProfile}
           className="flex items-center gap-2.5 cursor-pointer hover:opacity-80 transition"
@@ -102,7 +103,7 @@ export function Sidebar({
       </div>
 
       {/* Lista de Conversas Recentes */}
-      <div className="flex-1 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/40">
+      <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/40 overscroll-contain">
         {filtered.length === 0 ? (
           <div className="p-6 text-center text-slate-400">
             <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -118,7 +119,7 @@ export function Sidebar({
           filtered.map((conv) => {
             const isGroup = conv.type === "group";
             let name = conv.name || "Grupo da Família";
-            let avatar = conv.avatarUrl || "https://images.unsplash.com/photo-1511895426328-dc8714191300?w=150";
+            let avatar = conv.avatarUrl || (isGroup ? GROUP_AVATAR : DEFAULT_AVATAR);
 
             if (!isGroup) {
               const other = conv.members.find((m) => m.id !== currentUserId) || conv.members[0];

@@ -2,9 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DEFAULT_AVATAR, EMOJI_AVATAR_PRESETS } from "@/lib/emojiAvatars";
 import { trpc } from "@/lib/trpc";
-import { Heart, Loader2, Sparkles, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { Heart, Loader2, Sparkles } from "lucide-react";
+import React, { useState } from "react";
 import { toast } from "sonner";
 
 interface SimpleAuthModalProps {
@@ -12,27 +13,23 @@ interface SimpleAuthModalProps {
   onSuccess: () => void;
 }
 
-const AVATAR_PRESETS = [
-  "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&auto=format&fit=crop&q=80",
-  "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80",
-];
-
 export function SimpleAuthModal({ isOpen, onSuccess }: SimpleAuthModalProps) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [statusMessage, setStatusMessage] = useState("Oi família, estou online!");
-  const [avatarUrl, setAvatarUrl] = useState(AVATAR_PRESETS[0]);
+  const [avatarUrl, setAvatarUrl] = useState(DEFAULT_AVATAR);
 
   const utils = trpc.useUtils();
 
   const loginMutation = trpc.auth.loginSimple.useMutation({
     onSuccess: (data) => {
       toast.success(`Bem-vindo(a), ${data.user.name}!`);
-      utils.auth.me.invalidate();
+      if (data.token) {
+        try {
+          sessionStorage.setItem("manus-cookie", `app_session_id=${data.token}`);
+        } catch {}
+      }
+      utils.auth.me.setData(undefined, data.user);
       utils.conversations.list.invalidate();
       utils.users.list.invalidate();
       onSuccess();
@@ -59,36 +56,41 @@ export function SimpleAuthModal({ isOpen, onSuccess }: SimpleAuthModalProps) {
 
   return (
     <Dialog open={isOpen}>
-      <DialogContent className="sm:max-w-[440px] p-6 rounded-2xl">
-        <DialogHeader className="text-center sm:text-left">
-          <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mb-2 mx-auto sm:mx-0 shadow-sm">
-            <Heart className="w-6 h-6 fill-emerald-600" />
+      <DialogContent className="sm:max-w-[420px] max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl shadow-xl">
+        <DialogHeader className="text-left pb-1">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center shrink-0 shadow-xs">
+              <Heart className="w-4 h-4 fill-emerald-600" />
+            </div>
+            <DialogTitle className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">
+              CasaChat da Família
+            </DialogTitle>
           </div>
-          <DialogTitle className="text-2xl font-bold tracking-tight text-slate-800 dark:text-white">
-            CasaChat da Família
-          </DialogTitle>
-          <DialogDescription className="text-sm text-slate-600 dark:text-slate-300">
-            Acesso rápido e simples: basta digitar seu nome e email para entrar na sala da família.
+          <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+            Digite seu nome e email para entrar na sala da família.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="name" className="text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">
+        <form onSubmit={handleSubmit} className="space-y-3 pt-1">
+          {/* Nome */}
+          <div className="space-y-1">
+            <Label htmlFor="name" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
               Seu Nome ou Apelido Familiar
             </Label>
             <Input
               id="name"
-              placeholder="Ex: Mãe, Tio Beto, Luiza..."
+              placeholder="Ex: Pai, Mãe, Beto, Luiza..."
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="h-11 rounded-xl"
+              className="h-9.5 rounded-xl text-sm"
               required
+              autoFocus
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">
+          {/* Email */}
+          <div className="space-y-1">
+            <Label htmlFor="email" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
               Seu Email
             </Label>
             <Input
@@ -97,65 +99,86 @@ export function SimpleAuthModal({ isOpen, onSuccess }: SimpleAuthModalProps) {
               placeholder="seuemail@exemplo.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="h-11 rounded-xl"
+              className="h-9.5 rounded-xl text-sm"
               required
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="status" className="text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">
+          {/* Recado / Status */}
+          <div className="space-y-1">
+            <Label htmlFor="status" className="text-xs font-semibold text-slate-700 dark:text-slate-300">
               Recado / Frase de Status
             </Label>
             <Input
               id="status"
-              placeholder="Ex: No trabalho / Pronta pro almoço de domingo"
+              placeholder="Ex: No trabalho / Pronta pro almoço"
               value={statusMessage}
               onChange={(e) => setStatusMessage(e.target.value)}
-              className="h-11 rounded-xl"
+              className="h-9.5 rounded-xl text-sm"
             />
           </div>
 
-          <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase text-slate-600 dark:text-slate-400">
-              Escolha uma foto de perfil
-            </Label>
-            <div className="flex items-center gap-2 justify-between overflow-x-auto py-1">
-              {AVATAR_PRESETS.map((preset, idx) => (
-                <button
-                  type="button"
-                  key={idx}
-                  onClick={() => setAvatarUrl(preset)}
-                  className={`relative rounded-full transition-transform hover:scale-105 ${
-                    avatarUrl === preset ? "ring-4 ring-emerald-500 ring-offset-2 scale-105" : "opacity-75"
-                  }`}
-                >
-                  <img src={preset} alt="Avatar" className="w-10 h-10 rounded-full object-cover shadow-sm" />
-                </button>
-              ))}
+          {/* Escolha rápida de Emoji inicial (6 opções essenciais) */}
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Avatar Inicial
+              </Label>
+              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                {EMOJI_AVATAR_PRESETS.find((p) => p.url === avatarUrl)?.label || "Selecionado"}
+              </span>
             </div>
+
+            <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+              {EMOJI_AVATAR_PRESETS.map((preset) => {
+                const isSelected = avatarUrl === preset.url;
+                return (
+                  <button
+                    type="button"
+                    key={preset.id}
+                    onClick={() => setAvatarUrl(preset.url)}
+                    title={preset.label}
+                    className={`relative w-10 h-10 rounded-full transition-all flex items-center justify-center cursor-pointer ${
+                      isSelected
+                        ? "ring-3 ring-emerald-500 scale-105 shadow-md z-10"
+                        : "opacity-75 hover:opacity-100 hover:scale-105"
+                    }`}
+                  >
+                    <img
+                      src={preset.url}
+                      alt={preset.label}
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center pt-0.5">
+              💡 <em>Após entrar, você poderá carregar uma <strong>foto real do seu computador</strong> no perfil!</em>
+            </p>
           </div>
 
-          <Button
-            type="submit"
-            disabled={loginMutation.isPending}
-            className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium shadow-md transition-all flex items-center justify-center gap-2"
-          >
-            {loginMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Entrando...
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4" />
-                Entrar no Chat da Família
-              </>
-            )}
-          </Button>
-
-          <p className="text-[11px] text-center text-slate-500">
-            Nenhuma senha complicada é necessária. O email identifica cada membro da família.
-          </p>
+          {/* Botão de Entrar sempre visível */}
+          <div className="pt-2">
+            <Button
+              type="submit"
+              disabled={loginMutation.isPending}
+              className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+            >
+              {loginMutation.isPending ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Entrando na sala...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4" />
+                  <span>Entrar no Chat da Família</span>
+                </>
+              )}
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
@@ -262,7 +264,7 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    // Upload de arquivo ou foto base64
+    // Upload de arquivo ou foto base64 (Salva localmente com alta performance)
     uploadMedia: protectedProcedure
       .input(
         z.object({
@@ -274,14 +276,162 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const buffer = Buffer.from(input.base64Data, "base64");
         const safeName = input.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
-        const relKey = `chat-media/${Date.now()}_${safeName}`;
-        const result = await storagePut(relKey, buffer, input.contentType);
-        return {
-          url: result.url,
-          key: result.key,
+        const uniqueName = `${Date.now()}_${safeName}`;
+
+        try {
+          const uploadsDir = path.resolve(process.cwd(), "uploads");
+          if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+          }
+          const filePath = path.join(uploadsDir, uniqueName);
+          await fs.promises.writeFile(filePath, buffer);
+          return {
+            url: `/uploads/${uniqueName}`,
+            key: uniqueName,
+          };
+        } catch (localErr) {
+          console.error("Erro no salvamento local, tentando storage:", localErr);
+          const relKey = `chat-media/${uniqueName}`;
+          const result = await storagePut(relKey, buffer, input.contentType);
+          return {
+            url: result.url,
+            key: result.key,
+          };
+        }
+      }),
+  }),
+
+  // Módulo de Chamadas de Áudio e Vídeo (WebRTC Signaling)
+  calls: router({
+    initiate: protectedProcedure
+      .input(
+        z.object({
+          conversationId: z.number(),
+          type: z.enum(["audio", "video"]),
+          offer: z.any().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const session: CallSession = {
+          id: callId,
+          conversationId: input.conversationId,
+          callerId: ctx.user.id,
+          callerName: ctx.user.name || "Familiar",
+          callerAvatar: ctx.user.avatarUrl,
+          type: input.type,
+          status: "ringing",
+          offer: input.offer,
+          candidates: [],
+          startedAt: Date.now(),
+          updatedAt: Date.now(),
         };
+        activeCalls.set(callId, session);
+        return { callId, session };
+      }),
+
+    poll: protectedProcedure
+      .input(z.object({ conversationId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        for (const session of Array.from(activeCalls.values())) {
+          if (
+            session.conversationId === input.conversationId &&
+            (session.status === "ringing" || session.status === "connected")
+          ) {
+            return session;
+          }
+        }
+        return null;
+      }),
+
+    answer: protectedProcedure
+      .input(
+        z.object({
+          callId: z.string(),
+          answer: z.any(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const session = activeCalls.get(input.callId);
+        if (!session) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Chamada não encontrada" });
+        }
+        session.answer = input.answer;
+        session.status = "connected";
+        session.updatedAt = Date.now();
+        return { success: true };
+      }),
+
+    addCandidate: protectedProcedure
+      .input(
+        z.object({
+          callId: z.string(),
+          candidate: z.any(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const session = activeCalls.get(input.callId);
+        if (session) {
+          session.candidates.push({
+            candidate: input.candidate,
+            senderId: ctx.user.id,
+          });
+          session.updatedAt = Date.now();
+        }
+        return { success: true };
+      }),
+
+    getCandidates: protectedProcedure
+      .input(z.object({ callId: z.string() }))
+      .query(async ({ ctx, input }) => {
+        const session = activeCalls.get(input.callId);
+        if (!session) return [];
+        return session.candidates.filter((c) => c.senderId !== ctx.user.id);
+      }),
+
+    end: protectedProcedure
+      .input(
+        z.object({
+          callId: z.string(),
+          status: z.enum(["ended", "rejected"]).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const session = activeCalls.get(input.callId);
+        if (session) {
+          session.status = input.status || "ended";
+          session.updatedAt = Date.now();
+          setTimeout(() => activeCalls.delete(input.callId), 15000);
+        }
+        return { success: true };
       }),
   }),
 });
+
+interface CallSession {
+  id: string;
+  conversationId: number;
+  callerId: number;
+  callerName: string;
+  callerAvatar?: string | null;
+  type: "audio" | "video";
+  status: "ringing" | "connected" | "ended" | "rejected";
+  offer?: any;
+  answer?: any;
+  candidates: Array<{ candidate: any; senderId: number }>;
+  startedAt: number;
+  updatedAt: number;
+}
+
+const activeCalls = new Map<string, CallSession>();
+
+setInterval(() => {
+  const now = Date.now();
+  activeCalls.forEach((session, id) => {
+    if (now - session.updatedAt > 60 * 60 * 1000 || session.status === "ended") {
+      activeCalls.delete(id);
+    }
+  });
+}, 30000);
 
 export type AppRouter = typeof appRouter;

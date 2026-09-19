@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { SimpleAuthModal } from "@/components/SimpleAuthModal";
 import { Button } from "@/components/ui/button";
 import { trpc } from "@/lib/trpc";
+import { DEFAULT_AVATAR } from "@/lib/emojiAvatars";
 import { Heart, Loader2, MessageSquarePlus, ShieldCheck, Smartphone, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -17,7 +18,7 @@ export default function Home() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [showMobileChat, setShowMobileChat] = useState(false);
 
-  const defaultAvatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150";
+  const defaultAvatar = DEFAULT_AVATAR;
 
   const convListQuery = trpc.conversations.list.useQuery(undefined, {
     enabled: isAuthenticated && !!user,
@@ -120,14 +121,14 @@ export default function Home() {
 
   // Usuário Autenticado: Estrutura idêntica ao WhatsApp Web
   return (
-    <div className="min-h-screen bg-[#dadbd3] dark:bg-[#0c1317] flex items-center justify-center p-0 md:p-4">
+    <div className="h-[100dvh] w-full bg-[#dadbd3] dark:bg-[#0c1317] flex items-center justify-center p-0 md:p-4 overflow-hidden fixed inset-0">
       {/* Barra verde WhatsApp no topo */}
       <div className="hidden md:block fixed top-0 left-0 w-full h-32 bg-[#00a884] -z-10" />
 
-      <div className="w-full h-screen md:h-[94vh] md:max-w-7xl bg-white dark:bg-[#111b21] md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-200/60 dark:border-slate-800">
+      <div className="w-full h-full md:h-[94vh] md:max-w-7xl bg-white dark:bg-[#111b21] md:rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row border border-slate-200/60 dark:border-slate-800">
         {/* Barra Lateral */}
         <div
-          className={`w-full md:w-[380px] lg:w-[420px] h-full shrink-0 ${
+          className={`w-full md:w-[380px] lg:w-[420px] h-full shrink-0 min-h-0 overflow-hidden ${
             showMobileChat ? "hidden md:flex md:flex-col" : "flex flex-col"
           }`}
         >
@@ -145,7 +146,7 @@ export default function Home() {
 
         {/* Janela de Chat ou Tela Inicial Vazia */}
         <div
-          className={`flex-1 h-full flex-col ${
+          className={`flex-1 h-full min-h-0 flex-col overflow-hidden ${
             showMobileChat ? "flex" : "hidden md:flex"
           }`}
         >

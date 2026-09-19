@@ -1,23 +1,23 @@
+import React, { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DEFAULT_AVATAR, GROUP_AVATAR, optimizeImageForChat } from "@/lib/emojiAvatars";
+import { EmojiPicker } from "@/components/EmojiPicker";
+import { CallModal } from "@/components/CallModal";
 import { trpc } from "@/lib/trpc";
 import {
   ArrowLeft,
-  Check,
   CheckCheck,
   FileText,
   Heart,
-  Image as ImageIcon,
   Loader2,
   Paperclip,
   Phone,
   Send,
   Smile,
-  Users,
   Video,
 } from "lucide-react";
-import React, { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 interface ChatWindowProps {
@@ -31,12 +31,15 @@ const COMMON_REACTIONS = ["❤️", "👍", "😂", "😮", "🙏", "🎉"];
 export function ChatWindow({ conversationId, currentUserId, onBackMobile }: ChatWindowProps) {
   const [inputText, setInputText] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
+  const [currentCallType, setCurrentCallType] = useState<"audio" | "video">("audio");
+  const [isIncomingCall, setIsIncomingCall] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const utils = trpc.useUtils();
 
-  // Consultas tRPC com atualização periódica automática (polling) para simular tempo real
   const convQuery = trpc.conversations.get.useQuery(
     { conversationId },
     { refetchInterval: 3000 }
@@ -46,6 +49,21 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
     { conversationId },
     { refetchInterval: 2500 }
   );
+
+  // Monitora chamadas recebidas para esta conversa
+  const incomingCallQuery = trpc.calls.poll.useQuery(
+    { conversationId },
+    { refetchInterval: 2000 }
+  );
+
+  useEffect(() => {
+    const session = incomingCallQuery.data;
+    if (session && session.status === "ringing" && session.callerId !== currentUserId) {
+      setCurrentCallType(session.type);
+      setIsIncomingCall(true);
+      setIsCallModalOpen(true);
+    }
+  }, [incomingCallQuery.data]);
 
   const sendMutation = trpc.messages.send.useMutation({
     onSuccess: () => {
@@ -73,7 +91,6 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
     },
   });
 
-  // Marca como lida ao abrir
   useEffect(() => {
     markReadMutation.mutate({ conversationId });
   }, [conversationId]);
@@ -102,66 +119,60 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      toast.error("O arquivo deve ter no máximo 15MB");
+    if (file.size > 30 * 1024 * 1024) {
+      toast.error("O arquivo deve ter no máximo 30MB.");
       return;
     }
 
     setIsUploading(true);
-    const toastId = toast.loading("Enviando mídia familiar...");
+    const toastId = toast.loading("Preparando e enviando mídia familiar...");
 
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64String = (reader.result as string).split(",")[1];
-        const isImg = file.type.startsWith("image/");
+      let mediaType: "image" | "video" | "audio" | "file" = "file";
+      if (file.type.startsWith("image/")) mediaType = "image";
+      else if (file.type.startsWith("video/")) mediaType = "video";
+      else if (file.type.startsWith("audio/")) mediaType = "audio";
 
-        try {
-          const uploaded = await uploadMutation.mutateAsync({
-            fileName: file.name,
-            contentType: file.type || "application/octet-stream",
-            base64Data: base64String,
-          });
+      // Processa e otimiza de forma leve sem estourar memória do smartphone
+      const { base64Data, contentType } = await optimizeImageForChat(file);
 
-          await sendMutation.mutateAsync({
-            conversationId,
-            content: isImg ? "" : file.name,
-            mediaUrl: uploaded.url,
-            mediaType: isImg ? "image" : "file",
-            fileName: file.name,
-          });
+      const uploaded = await uploadMutation.mutateAsync({
+        fileName: file.name,
+        contentType,
+        base64Data,
+      });
 
-          toast.dismiss(toastId);
-          toast.success("Foto/arquivo enviado!");
-        } catch (err: any) {
-          toast.dismiss(toastId);
-          toast.error("Erro no envio: " + (err.message || "Tente novamente"));
-        } finally {
-          setIsUploading(false);
-          if (fileInputRef.current) fileInputRef.current.value = "";
-        }
-      };
-      reader.readAsDataURL(file);
-    } catch {
-      setIsUploading(false);
+      await sendMutation.mutateAsync({
+        conversationId,
+        content: mediaType === "image" ? "" : file.name,
+        mediaUrl: uploaded.url,
+        mediaType,
+        fileName: file.name,
+      });
+
       toast.dismiss(toastId);
-      toast.error("Falha ao ler arquivo");
+      toast.success("Enviado com sucesso!");
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error("Erro no envio: " + (err.message || "Tente novamente"));
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
 
   const conv = convQuery.data;
   const messages = messagesQuery.data || [];
 
-  // Nome e avatar a exibir no topo
   let title = "Conversa";
   let subtitle = "";
-  let avatar = "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150";
+  let avatar = DEFAULT_AVATAR;
 
   if (conv) {
     if (conv.type === "group") {
       title = conv.name || "Grupo da Família";
       subtitle = `${conv.members.length} membros da família`;
-      avatar = conv.avatarUrl || "https://images.unsplash.com/photo-1511895426328-dc8714191300?w=150";
+      avatar = conv.avatarUrl || GROUP_AVATAR;
     } else {
       const other = conv.members.find((m) => m.id !== currentUserId) || conv.members[0];
       if (other) {
@@ -172,50 +183,57 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
     }
   }
 
+  const handleStartCall = (type: "audio" | "video") => {
+    setIsIncomingCall(false);
+    setCurrentCallType(type);
+    setIsCallModalOpen(true);
+  };
+
   return (
-    <div className="flex flex-col h-full bg-[#efeae2] dark:bg-[#0b141a] relative">
+    <div className="flex flex-col h-full w-full bg-[#efeae2] dark:bg-[#0b141a] relative overflow-hidden">
       {/* Header Estilo WhatsApp */}
-      <div className="h-16 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 shadow-sm z-10">
-        <div className="flex items-center gap-3">
+      <div className="h-14 sm:h-16 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-slate-200 dark:border-slate-800 px-3 sm:px-4 flex items-center justify-between shrink-0 shadow-sm z-10">
+        <div className="flex items-center gap-2.5 sm:gap-3">
           <button
             onClick={onBackMobile}
-            className="md:hidden p-1.5 -ml-1 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full"
+            className="md:hidden p-1.5 -ml-1 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full cursor-pointer"
             aria-label="Voltar"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
 
           <div className="relative">
-            <img src={avatar} alt={title} className="w-10 h-10 rounded-full object-cover ring-1 ring-slate-300" />
+            <img src={avatar} alt={title} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-1 ring-slate-300" />
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-[#202c33]" />
           </div>
 
           <div className="min-w-0">
             <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">{title}</h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</p>
+            <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">{subtitle}</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+        {/* Botões de Chamada de Telefone (Áudio) e Vídeo */}
+        <div className="flex items-center gap-1">
           <button
-            onClick={() => toast.info("Ligação de voz da família (simulação)")}
-            className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition"
-            title="Chamada de voz"
+            onClick={() => handleStartCall("audio")}
+            className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
+            title="Iniciar Ligação de Voz"
           >
-            <Phone className="w-4 h-4" />
+            <Phone className="w-4.5 h-4.5" />
           </button>
           <button
-            onClick={() => toast.info("Vídeo-chamada da família (simulação)")}
-            className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition"
-            title="Chamada de vídeo"
+            onClick={() => handleStartCall("video")}
+            className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
+            title="Iniciar Chamada de Vídeo"
           >
-            <Video className="w-4 h-4" />
+            <Video className="w-4.5 h-4.5" />
           </button>
         </div>
       </div>
 
-      {/* Área de Mensagens com Papel de Parede Sutil */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 chat-pattern-bg">
+      {/* Área de Mensagens - apenas esta área rola internamente */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3 chat-pattern-bg overscroll-contain">
         {messagesQuery.isLoading ? (
           <div className="flex items-center justify-center h-full">
             <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
@@ -227,7 +245,7 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
             </div>
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Comece a conversa com sua família!</p>
             <p className="text-xs text-slate-500 max-w-xs mt-1">
-              Mande um "bom dia", compartilhe fotos de almoço ou combine os próximos encontros.
+              Mande um "bom dia", compartilhe fotos, áudios ou faça uma chamada de voz e vídeo.
             </p>
           </div>
         ) : (
@@ -247,14 +265,13 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
                       : "bg-white dark:bg-[#202c33] text-slate-800 dark:text-white rounded-tl-none border border-slate-100 dark:border-transparent"
                   }`}
                 >
-                  {/* Nome do remetente se for grupo e não for eu */}
                   {!isMe && conv?.type === "group" && (
                     <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mb-1">
                       {msg.senderName}
                     </p>
                   )}
 
-                  {/* Foto enviada */}
+                  {/* Foto compartilhada */}
                   {msg.mediaType === "image" && msg.mediaUrl && (
                     <div className="rounded-xl overflow-hidden mb-1.5 max-h-[320px] bg-black/5">
                       <img
@@ -266,23 +283,39 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
                     </div>
                   )}
 
-                  {/* Arquivo / Documento */}
+                  {/* Vídeo compartilhado */}
+                  {msg.mediaType === "video" && msg.mediaUrl && (
+                    <div className="rounded-xl overflow-hidden mb-1.5 max-h-[320px] bg-black">
+                      <video controls src={msg.mediaUrl} className="w-full max-h-[300px] object-cover rounded-xl" />
+                    </div>
+                  )}
+
+                  {/* Áudio compartilhado */}
+                  {msg.mediaType === "audio" && msg.mediaUrl && (
+                    <div className="my-1.5 w-full min-w-[220px]">
+                      <audio controls src={msg.mediaUrl} className="w-full h-8" />
+                    </div>
+                  )}
+
+                  {/* Arquivo / Documento / PDF */}
                   {msg.mediaType === "file" && msg.mediaUrl && (
                     <a
                       href={msg.mediaUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-2 p-2 bg-black/5 dark:bg-white/10 rounded-xl mb-1.5 hover:bg-black/10 transition"
+                      className="flex items-center gap-2 p-2.5 bg-black/5 dark:bg-white/10 rounded-xl mb-1.5 hover:bg-black/10 transition"
                     >
-                      <FileText className="w-5 h-5 text-emerald-600" />
-                      <span className="text-xs font-medium truncate underline">{msg.fileName || "Baixar arquivo"}</span>
+                      <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
+                      <span className="text-xs font-semibold truncate underline text-emerald-700 dark:text-emerald-400">
+                        {msg.fileName || "Baixar arquivo"}
+                      </span>
                     </a>
                   )}
 
                   {/* Texto da mensagem */}
                   {msg.content && <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>}
 
-                  {/* Horário e confirmação de leitura estilo WhatsApp */}
+                  {/* Horário */}
                   <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500 dark:text-slate-300/80">
                     <span>{timeStr}</span>
                     {isMe && <CheckCheck className="w-3.5 h-3.5 text-sky-500" />}
@@ -301,13 +334,13 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
                   )}
 
                   {/* Barra rápida de reação (ao passar o mouse) */}
-                  <div className="hidden group-hover:flex items-center gap-1 absolute -top-3 right-0 bg-white dark:bg-[#202c33] px-2 py-0.5 rounded-full shadow border border-slate-200 dark:border-slate-700">
+                  <div className="hidden group-hover:flex items-center gap-1 absolute -top-3 right-0 bg-white dark:bg-[#202c33] px-2 py-0.5 rounded-full shadow border border-slate-200 dark:border-slate-700 z-10">
                     {COMMON_REACTIONS.map((emoji) => (
                       <button
                         key={emoji}
                         type="button"
                         onClick={() => reactMutation.mutate({ messageId: msg.id, emoji })}
-                        className="text-xs hover:scale-125 transition-transform"
+                        className="text-xs hover:scale-125 transition-transform cursor-pointer"
                       >
                         {emoji}
                       </button>
@@ -322,50 +355,39 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
       </div>
 
       {/* Barra de Entrada de Mensagens WhatsApp */}
-      <div className="p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 shrink-0">
+      <div className="p-2 sm:p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-slate-200 dark:border-slate-800 flex items-center gap-1.5 sm:gap-2 shrink-0 pb-[max(0.6rem,env(safe-area-inset-bottom))]">
         <input
           type="file"
           ref={fileInputRef}
           onChange={handleFileUpload}
-          accept="image/*,.pdf,.doc,.docx"
           className="hidden"
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
         />
 
-        {/* Botão de Anexo */}
+        {/* Botão de Anexo (Fotos, Vídeos, Documentos) */}
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={isUploading}
-          className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition"
-          title="Enviar foto ou arquivo"
+          className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
+          title="Enviar foto, vídeo ou documento"
         >
           {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Paperclip className="w-5 h-5" />}
         </button>
 
-        {/* Emojis rápidos */}
+        {/* Teclado Completo de Emojis */}
         <Popover>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition hidden sm:block"
-              title="Emojis"
+              className="p-2.5 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
+              title="Teclado de Emojis Completo"
             >
               <Smile className="w-5 h-5" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-64 p-2 bg-white dark:bg-slate-800 rounded-2xl shadow-xl">
-            <div className="grid grid-cols-6 gap-2 text-xl text-center">
-              {["❤️", "😂", "🥰", "👍", "🙏", "🍕", "🎂", "🎉", "😘", "☕", "🏡", "👶"].map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => setInputText((prev) => prev + e)}
-                  className="hover:scale-125 transition-transform p-1"
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
+          <PopoverContent className="w-auto p-0 border-none bg-transparent shadow-none" side="top" align="start">
+            <EmojiPicker onSelectEmoji={(emoji) => setInputText((prev) => prev + emoji)} />
           </PopoverContent>
         </Popover>
 
@@ -381,12 +403,29 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
           <Button
             type="submit"
             disabled={sendMutation.isPending || (!inputText.trim() && !isUploading)}
-            className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 p-0 flex items-center justify-center shadow-md transition-transform active:scale-95"
+            className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 p-0 flex items-center justify-center shadow-md transition-transform active:scale-95 cursor-pointer"
           >
             {sendMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
           </Button>
         </form>
       </div>
+
+      {/* Modal de Chamada de Voz e Vídeo WebRTC */}
+      {isCallModalOpen && (
+        <CallModal
+          isOpen={isCallModalOpen}
+          onClose={() => setIsCallModalOpen(false)}
+          conversationId={conversationId}
+          currentUserId={currentUserId}
+          currentUserName={conv?.members.find((m) => m.id === currentUserId)?.name || "Eu"}
+          currentUserAvatar={conv?.members.find((m) => m.id === currentUserId)?.avatarUrl || DEFAULT_AVATAR}
+          targetName={title}
+          targetAvatar={avatar}
+          callType={currentCallType}
+          isIncoming={isIncomingCall}
+          incomingCallSession={incomingCallQuery.data}
+        />
+      )}
     </div>
   );
 }

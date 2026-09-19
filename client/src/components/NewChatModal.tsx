@@ -3,6 +3,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DEFAULT_AVATAR } from "@/lib/emojiAvatars";
 import { trpc } from "@/lib/trpc";
 import { Loader2, MessageSquare, Users } from "lucide-react";
 import { useState } from "react";
@@ -143,7 +144,7 @@ export function NewChatModal({ isOpen, onClose, onSelectConversation }: NewChatM
                     className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 text-left transition-colors border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
                   >
                     <img
-                      src={u.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"}
+                      src={u.avatarUrl || DEFAULT_AVATAR}
                       alt={u.name || "Parente"}
                       className="w-10 h-10 rounded-full object-cover"
                     />
@@ -197,7 +198,7 @@ export function NewChatModal({ isOpen, onClose, onSelectConversation }: NewChatM
                         onCheckedChange={() => toggleUserSelection(u.id)}
                       />
                       <img
-                        src={u.avatarUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150"}
+                        src={u.avatarUrl || DEFAULT_AVATAR}
                         alt={u.name || ""}
                         className="w-7 h-7 rounded-full object-cover ml-1"
                       />
