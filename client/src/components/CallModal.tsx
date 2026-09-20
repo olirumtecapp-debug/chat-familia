@@ -56,6 +56,15 @@ export function CallModal({
   const [isVideoOff, setIsVideoOff] = useState(callType === "audio");
   const [callId, setCallId] = useState<string | null>(incomingCallSession?.id || null);
 
+  const callIdRef = useRef<string | null>(incomingCallSession?.id || null);
+
+  useEffect(() => {
+    if (incomingCallSession?.id) {
+      setCallId(incomingCallSession.id);
+      callIdRef.current = incomingCallSession.id;
+    }
+  }, [incomingCallSession?.id]);
+
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -179,9 +188,10 @@ export function CallModal({
 
         // Coleta candidatos ICE para enviar ao outro lado
         pc.onicecandidate = (event) => {
-          if (event.candidate && callId) {
+          const currentCallId = callIdRef.current;
+          if (event.candidate && currentCallId) {
             addCandidateMutation.mutate({
-              callId,
+              callId: currentCallId,
               candidate: event.candidate.toJSON(),
             });
           }
@@ -199,6 +209,7 @@ export function CallModal({
           });
 
           setCallId(res.callId);
+          callIdRef.current = res.callId;
         }
       } catch (err: any) {
         console.error("Erro ao acessar câmera/microfone:", err);
@@ -256,12 +267,16 @@ export function CallModal({
 
     if (pc && session?.offer) {
       try {
+        const targetCallId = session.id;
+        setCallId(targetCallId);
+        callIdRef.current = targetCallId;
+
         await pc.setRemoteDescription(new RTCSessionDescription(session.offer));
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
         await answerMutation.mutateAsync({
-          callId: session.id,
+          callId: targetCallId,
           answer: { sdp: answer.sdp, type: answer.type },
         });
 

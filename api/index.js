@@ -1,4 +1,4 @@
-// api/index.ts
+// api/entry.ts
 import "dotenv/config";
 import express from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -25,20 +25,8 @@ var decodeOAuthState = (state) => {
   return { redirectUri: decoded };
 };
 
-// shared/_core/errors.ts
-var HttpError = class extends Error {
-  constructor(statusCode, message) {
-    super(message);
-    this.statusCode = statusCode;
-    this.name = "HttpError";
-  }
-};
-var ForbiddenError = (msg) => new HttpError(403, msg);
-
-// server/_core/sdk.ts
-import axios from "axios";
-import { parse as parseCookieHeader } from "cookie";
-import { SignJWT, jwtVerify } from "jose";
+// server/_core/oauth.ts
+import { parse as parseCookieHeader2 } from "cookie";
 
 // server/db.ts
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -466,7 +454,38 @@ async function addMemberToConversation(conversationId, targetUserId) {
   }
 }
 
+// server/_core/cookies.ts
+function isSecureRequest(req) {
+  if (req.protocol === "https") return true;
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  if (!forwardedProto) return false;
+  const protoList = Array.isArray(forwardedProto) ? forwardedProto : forwardedProto.split(",");
+  return protoList.some((proto) => proto.trim().toLowerCase() === "https");
+}
+function getSessionCookieOptions(req) {
+  const isSecure = isSecureRequest(req);
+  return {
+    httpOnly: true,
+    path: "/",
+    sameSite: isSecure ? "none" : "lax",
+    secure: isSecure
+  };
+}
+
+// shared/_core/errors.ts
+var HttpError = class extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.statusCode = statusCode;
+    this.name = "HttpError";
+  }
+};
+var ForbiddenError = (msg) => new HttpError(403, msg);
+
 // server/_core/sdk.ts
+import axios from "axios";
+import { parse as parseCookieHeader } from "cookie";
+import { SignJWT, jwtVerify } from "jose";
 var isNonEmptyString = (value) => typeof value === "string" && value.length > 0;
 var EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 var GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
@@ -710,42 +729,6 @@ function buildCronUser(userInfo) {
 }
 var sdk = new SDKServer();
 
-// server/_core/context.ts
-async function createContext(opts) {
-  let user = null;
-  try {
-    user = await sdk.authenticateRequest(opts.req);
-  } catch (error) {
-    user = null;
-  }
-  return {
-    req: opts.req,
-    res: opts.res,
-    user
-  };
-}
-
-// server/_core/oauth.ts
-import { parse as parseCookieHeader2 } from "cookie";
-
-// server/_core/cookies.ts
-function isSecureRequest(req) {
-  if (req.protocol === "https") return true;
-  const forwardedProto = req.headers["x-forwarded-proto"];
-  if (!forwardedProto) return false;
-  const protoList = Array.isArray(forwardedProto) ? forwardedProto : forwardedProto.split(",");
-  return protoList.some((proto) => proto.trim().toLowerCase() === "https");
-}
-function getSessionCookieOptions(req) {
-  const isSecure = isSecureRequest(req);
-  return {
-    httpOnly: true,
-    path: "/",
-    sameSite: isSecure ? "none" : "lax",
-    secure: isSecure
-  };
-}
-
 // server/_core/oauth.ts
 function getQueryParam(req, key) {
   const value = req.query[key];
@@ -839,6 +822,7 @@ function registerStorageProxy(app2) {
 import fs from "fs";
 import path from "path";
 import { TRPCError as TRPCError3 } from "@trpc/server";
+import { sql as sql2 } from "drizzle-orm";
 import { z as z2 } from "zod";
 
 // server/_core/systemRouter.ts
@@ -1304,7 +1288,7 @@ var appRouter = router({
       }
     })
   }),
-  // Módulo de Chamadas de Áudio e Vídeo (WebRTC Signaling)
+  // Módulo de Chamadas de Áudio e Vídeo (WebRTC Signaling com persistência no MySQL)
   calls: router({
     initiate: protectedProcedure.input(
       z2.object({
@@ -1314,29 +1298,83 @@ var appRouter = router({
       })
     ).mutation(async ({ ctx, input }) => {
       const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const session = {
-        id: callId,
-        conversationId: input.conversationId,
-        callerId: ctx.user.id,
-        callerName: ctx.user.name || "Familiar",
-        callerAvatar: ctx.user.avatarUrl,
-        type: input.type,
-        status: "ringing",
-        offer: input.offer,
-        candidates: [],
-        startedAt: Date.now(),
-        updatedAt: Date.now()
+      const database = await getDb();
+      if (database) {
+        await database.execute(sql2`
+            INSERT INTO calls (id, conversationId, callerId, callerName, callerAvatar, type, status, offer, candidates)
+            VALUES (
+              ${callId},
+              ${input.conversationId},
+              ${ctx.user.id},
+              ${ctx.user.name || "Familiar"},
+              ${ctx.user.avatarUrl || null},
+              ${input.type},
+              'ringing',
+              ${input.offer ? JSON.stringify(input.offer) : null},
+              '[]'
+            )
+          `);
+      }
+      return {
+        callId,
+        session: {
+          id: callId,
+          conversationId: input.conversationId,
+          callerId: ctx.user.id,
+          callerName: ctx.user.name || "Familiar",
+          callerAvatar: ctx.user.avatarUrl,
+          type: input.type,
+          status: "ringing",
+          offer: input.offer,
+          candidates: [],
+          startedAt: Date.now(),
+          updatedAt: Date.now()
+        }
       };
-      activeCalls.set(callId, session);
-      return { callId, session };
     }),
     poll: protectedProcedure.input(z2.object({ conversationId: z2.number() })).query(async ({ ctx, input }) => {
-      for (const session of Array.from(activeCalls.values())) {
-        if (session.conversationId === input.conversationId && (session.status === "ringing" || session.status === "connected")) {
-          return session;
-        }
+      const database = await getDb();
+      if (!database) return null;
+      const [rows] = await database.execute(sql2`
+          SELECT * FROM calls
+          WHERE conversationId = ${input.conversationId}
+            AND status IN ('ringing', 'connected')
+            AND updatedAt >= NOW() - INTERVAL 2 MINUTE
+          ORDER BY updatedAt DESC
+          LIMIT 1
+        `);
+      const list = rows;
+      if (!list || list.length === 0) return null;
+      const row = list[0];
+      let offer = null;
+      let answer = null;
+      let candidates = [];
+      try {
+        if (row.offer) offer = JSON.parse(row.offer);
+      } catch {
       }
-      return null;
+      try {
+        if (row.answer) answer = JSON.parse(row.answer);
+      } catch {
+      }
+      try {
+        if (row.candidates) candidates = JSON.parse(row.candidates);
+      } catch {
+      }
+      return {
+        id: row.id,
+        conversationId: row.conversationId,
+        callerId: row.callerId,
+        callerName: row.callerName,
+        callerAvatar: row.callerAvatar,
+        type: row.type,
+        status: row.status,
+        offer,
+        answer,
+        candidates,
+        startedAt: new Date(row.startedAt).getTime(),
+        updatedAt: new Date(row.updatedAt).getTime()
+      };
     }),
     answer: protectedProcedure.input(
       z2.object({
@@ -1344,13 +1382,16 @@ var appRouter = router({
         answer: z2.any()
       })
     ).mutation(async ({ input }) => {
-      const session = activeCalls.get(input.callId);
-      if (!session) {
-        throw new TRPCError3({ code: "NOT_FOUND", message: "Chamada n\xE3o encontrada" });
+      const database = await getDb();
+      if (database) {
+        await database.execute(sql2`
+            UPDATE calls
+            SET status = 'connected',
+                answer = ${JSON.stringify(input.answer)},
+                updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ${input.callId}
+          `);
       }
-      session.answer = input.answer;
-      session.status = "connected";
-      session.updatedAt = Date.now();
       return { success: true };
     }),
     addCandidate: protectedProcedure.input(
@@ -1359,20 +1400,43 @@ var appRouter = router({
         candidate: z2.any()
       })
     ).mutation(async ({ ctx, input }) => {
-      const session = activeCalls.get(input.callId);
-      if (session) {
-        session.candidates.push({
-          candidate: input.candidate,
-          senderId: ctx.user.id
-        });
-        session.updatedAt = Date.now();
+      const database = await getDb();
+      if (database) {
+        const [rows] = await database.execute(sql2`
+            SELECT candidates FROM calls WHERE id = ${input.callId} LIMIT 1
+          `);
+        const list = rows;
+        if (list && list.length > 0) {
+          let candidates = [];
+          try {
+            if (list[0].candidates) candidates = JSON.parse(list[0].candidates);
+          } catch {
+          }
+          candidates.push({ candidate: input.candidate, senderId: ctx.user.id });
+          await database.execute(sql2`
+              UPDATE calls
+              SET candidates = ${JSON.stringify(candidates)},
+                  updatedAt = CURRENT_TIMESTAMP
+              WHERE id = ${input.callId}
+            `);
+        }
       }
       return { success: true };
     }),
     getCandidates: protectedProcedure.input(z2.object({ callId: z2.string() })).query(async ({ ctx, input }) => {
-      const session = activeCalls.get(input.callId);
-      if (!session) return [];
-      return session.candidates.filter((c) => c.senderId !== ctx.user.id);
+      const database = await getDb();
+      if (!database) return [];
+      const [rows] = await database.execute(sql2`
+          SELECT candidates FROM calls WHERE id = ${input.callId} LIMIT 1
+        `);
+      const list = rows;
+      if (!list || list.length === 0) return [];
+      let candidates = [];
+      try {
+        if (list[0].candidates) candidates = JSON.parse(list[0].candidates);
+      } catch {
+      }
+      return candidates.filter((c) => c.senderId !== ctx.user.id);
     }),
     end: protectedProcedure.input(
       z2.object({
@@ -1380,27 +1444,36 @@ var appRouter = router({
         status: z2.enum(["ended", "rejected"]).optional()
       })
     ).mutation(async ({ input }) => {
-      const session = activeCalls.get(input.callId);
-      if (session) {
-        session.status = input.status || "ended";
-        session.updatedAt = Date.now();
-        setTimeout(() => activeCalls.delete(input.callId), 15e3);
+      const database = await getDb();
+      if (database) {
+        await database.execute(sql2`
+            UPDATE calls
+            SET status = ${input.status || "ended"},
+                updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ${input.callId}
+          `);
       }
       return { success: true };
     })
   })
 });
-var activeCalls = /* @__PURE__ */ new Map();
-setInterval(() => {
-  const now = Date.now();
-  activeCalls.forEach((session, id) => {
-    if (now - session.updatedAt > 60 * 60 * 1e3 || session.status === "ended") {
-      activeCalls.delete(id);
-    }
-  });
-}, 3e4);
 
-// api/index.ts
+// server/_core/context.ts
+async function createContext(opts) {
+  let user = null;
+  try {
+    user = await sdk.authenticateRequest(opts.req);
+  } catch (error) {
+    user = null;
+  }
+  return {
+    req: opts.req,
+    res: opts.res,
+    user
+  };
+}
+
+// api/entry.ts
 var app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -1413,7 +1486,7 @@ app.use(
     createContext
   })
 );
-var index_default = app;
+var entry_default = app;
 export {
-  index_default as default
+  entry_default as default
 };

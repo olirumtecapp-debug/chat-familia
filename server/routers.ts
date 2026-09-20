@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { COOKIE_NAME } from "@shared/const";
 import { TRPCError } from "@trpc/server";
+import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { sdk } from "./_core/sdk";
@@ -354,7 +355,7 @@ export const appRouter = router({
       }),
   }),
 
-  // Módulo de Chamadas de Áudio e Vídeo (WebRTC Signaling)
+  // Módulo de Chamadas de Áudio e Vídeo (WebRTC Signaling com persistência no MySQL)
   calls: router({
     initiate: protectedProcedure
       .input(
@@ -366,35 +367,81 @@ export const appRouter = router({
       )
       .mutation(async ({ ctx, input }) => {
         const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        const session: CallSession = {
-          id: callId,
-          conversationId: input.conversationId,
-          callerId: ctx.user.id,
-          callerName: ctx.user.name || "Familiar",
-          callerAvatar: ctx.user.avatarUrl,
-          type: input.type,
-          status: "ringing",
-          offer: input.offer,
-          candidates: [],
-          startedAt: Date.now(),
-          updatedAt: Date.now(),
+        const database = await db.getDb();
+        if (database) {
+          await database.execute(sql`
+            INSERT INTO calls (id, conversationId, callerId, callerName, callerAvatar, type, status, offer, candidates)
+            VALUES (
+              ${callId},
+              ${input.conversationId},
+              ${ctx.user.id},
+              ${ctx.user.name || "Familiar"},
+              ${ctx.user.avatarUrl || null},
+              ${input.type},
+              'ringing',
+              ${input.offer ? JSON.stringify(input.offer) : null},
+              '[]'
+            )
+          `);
+        }
+        return {
+          callId,
+          session: {
+            id: callId,
+            conversationId: input.conversationId,
+            callerId: ctx.user.id,
+            callerName: ctx.user.name || "Familiar",
+            callerAvatar: ctx.user.avatarUrl,
+            type: input.type,
+            status: "ringing",
+            offer: input.offer,
+            candidates: [],
+            startedAt: Date.now(),
+            updatedAt: Date.now(),
+          },
         };
-        activeCalls.set(callId, session);
-        return { callId, session };
       }),
 
     poll: protectedProcedure
       .input(z.object({ conversationId: z.number() }))
       .query(async ({ ctx, input }) => {
-        for (const session of Array.from(activeCalls.values())) {
-          if (
-            session.conversationId === input.conversationId &&
-            (session.status === "ringing" || session.status === "connected")
-          ) {
-            return session;
-          }
-        }
-        return null;
+        const database = await db.getDb();
+        if (!database) return null;
+
+        const [rows] = await database.execute(sql`
+          SELECT * FROM calls
+          WHERE conversationId = ${input.conversationId}
+            AND status IN ('ringing', 'connected')
+            AND updatedAt >= NOW() - INTERVAL 2 MINUTE
+          ORDER BY updatedAt DESC
+          LIMIT 1
+        `);
+
+        const list = rows as any[];
+        if (!list || list.length === 0) return null;
+
+        const row = list[0];
+        let offer = null;
+        let answer = null;
+        let candidates = [];
+        try { if (row.offer) offer = JSON.parse(row.offer); } catch {}
+        try { if (row.answer) answer = JSON.parse(row.answer); } catch {}
+        try { if (row.candidates) candidates = JSON.parse(row.candidates); } catch {}
+
+        return {
+          id: row.id,
+          conversationId: row.conversationId,
+          callerId: row.callerId,
+          callerName: row.callerName,
+          callerAvatar: row.callerAvatar,
+          type: row.type,
+          status: row.status,
+          offer,
+          answer,
+          candidates,
+          startedAt: new Date(row.startedAt).getTime(),
+          updatedAt: new Date(row.updatedAt).getTime(),
+        };
       }),
 
     answer: protectedProcedure
@@ -405,13 +452,16 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        const session = activeCalls.get(input.callId);
-        if (!session) {
-          throw new TRPCError({ code: "NOT_FOUND", message: "Chamada não encontrada" });
+        const database = await db.getDb();
+        if (database) {
+          await database.execute(sql`
+            UPDATE calls
+            SET status = 'connected',
+                answer = ${JSON.stringify(input.answer)},
+                updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ${input.callId}
+          `);
         }
-        session.answer = input.answer;
-        session.status = "connected";
-        session.updatedAt = Date.now();
         return { success: true };
       }),
 
@@ -423,13 +473,25 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
-        const session = activeCalls.get(input.callId);
-        if (session) {
-          session.candidates.push({
-            candidate: input.candidate,
-            senderId: ctx.user.id,
-          });
-          session.updatedAt = Date.now();
+        const database = await db.getDb();
+        if (database) {
+          const [rows] = await database.execute(sql`
+            SELECT candidates FROM calls WHERE id = ${input.callId} LIMIT 1
+          `);
+          const list = rows as any[];
+          if (list && list.length > 0) {
+            let candidates: any[] = [];
+            try {
+              if (list[0].candidates) candidates = JSON.parse(list[0].candidates);
+            } catch {}
+            candidates.push({ candidate: input.candidate, senderId: ctx.user.id });
+            await database.execute(sql`
+              UPDATE calls
+              SET candidates = ${JSON.stringify(candidates)},
+                  updatedAt = CURRENT_TIMESTAMP
+              WHERE id = ${input.callId}
+            `);
+          }
         }
         return { success: true };
       }),
@@ -437,9 +499,18 @@ export const appRouter = router({
     getCandidates: protectedProcedure
       .input(z.object({ callId: z.string() }))
       .query(async ({ ctx, input }) => {
-        const session = activeCalls.get(input.callId);
-        if (!session) return [];
-        return session.candidates.filter((c) => c.senderId !== ctx.user.id);
+        const database = await db.getDb();
+        if (!database) return [];
+        const [rows] = await database.execute(sql`
+          SELECT candidates FROM calls WHERE id = ${input.callId} LIMIT 1
+        `);
+        const list = rows as any[];
+        if (!list || list.length === 0) return [];
+        let candidates: any[] = [];
+        try {
+          if (list[0].candidates) candidates = JSON.parse(list[0].candidates);
+        } catch {}
+        return candidates.filter((c: any) => c.senderId !== ctx.user.id);
       }),
 
     end: protectedProcedure
@@ -450,41 +521,18 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ input }) => {
-        const session = activeCalls.get(input.callId);
-        if (session) {
-          session.status = input.status || "ended";
-          session.updatedAt = Date.now();
-          setTimeout(() => activeCalls.delete(input.callId), 15000);
+        const database = await db.getDb();
+        if (database) {
+          await database.execute(sql`
+            UPDATE calls
+            SET status = ${input.status || "ended"},
+                updatedAt = CURRENT_TIMESTAMP
+            WHERE id = ${input.callId}
+          `);
         }
         return { success: true };
       }),
   }),
 });
-
-interface CallSession {
-  id: string;
-  conversationId: number;
-  callerId: number;
-  callerName: string;
-  callerAvatar?: string | null;
-  type: "audio" | "video";
-  status: "ringing" | "connected" | "ended" | "rejected";
-  offer?: any;
-  answer?: any;
-  candidates: Array<{ candidate: any; senderId: number }>;
-  startedAt: number;
-  updatedAt: number;
-}
-
-const activeCalls = new Map<string, CallSession>();
-
-setInterval(() => {
-  const now = Date.now();
-  activeCalls.forEach((session, id) => {
-    if (now - session.updatedAt > 60 * 60 * 1000 || session.status === "ended") {
-      activeCalls.delete(id);
-    }
-  });
-}, 30000);
 
 export type AppRouter = typeof appRouter;
