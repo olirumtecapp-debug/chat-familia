@@ -166,6 +166,7 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
 
   const conv = convQuery.data;
   const messages = messagesQuery.data || [];
+  const isGroup = conv?.type === "group";
 
   let title = "Conversa";
   let subtitle = "";
