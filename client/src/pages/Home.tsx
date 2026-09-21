@@ -89,12 +89,31 @@ function Welcome() {
   const { loading } = useAuth();
   const { installApp, showGuide, setShowGuide, isIOS, isInstalled } = usePwaInstall();
   const utils = trpc.useUtils();
-  const login = trpc.auth.localLogin.useMutation({ onSuccess: async () => { await utils.auth.me.invalidate(); toast.success("Acesso liberado."); }, onError: error => toast.error(error.message) });
+  const login = trpc.auth.localLogin.useMutation({
+    onSuccess: async (data: any) => {
+      const token = data?.sessionToken;
+      if (token) {
+        localStorage.setItem("chat_session_token", token);
+        sessionStorage.setItem("chat_session_token", token);
+        document.cookie = `app_session_id=${token}; path=/; max-age=31536000; SameSite=Lax; Secure`;
+      }
+      if (data?.user) {
+        utils.auth.me.setData(undefined, data.user);
+      }
+      await utils.auth.me.invalidate();
+      await utils.profile.me.invalidate();
+      toast.success("Acesso liberado.");
+      setTimeout(() => {
+        window.location.reload();
+      }, 300);
+    },
+    onError: error => toast.error(error.message)
+  });
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [familyCode, setFamilyCode] = useState("");
   return <main className="auth-shell">
     <div className="auth-orbit orbit-one" /><div className="auth-orbit orbit-two" />
     <section className="auth-panel">
-      <img className="auth-logo" src="/manus-storage/ChatForAll-Logo-cropped_4e47447c.png" alt="ChatForAll" />
+      <img className="auth-logo" src="/icon-512.png" alt="ChatForAll" />
       <p className="eyebrow">Comunicação privada, sem ruído</p>
       <h1>Todos próximos.<br /><em>Onde importa.</em></h1>
       <p className="auth-copy">ChatForAll mantém as conversas da sua família em um espaço leve, privado e direto.</p>
@@ -113,7 +132,7 @@ function Welcome() {
           <Download className="w-4 h-4 text-[var(--accent)] ml-auto" />
         </button>
       )}
-      <p className="auth-note">Use seu nome, e-mail e o código privado compartilhado pela família. Não há validação pelo Manus.</p>
+      <p className="auth-note">Use seu nome, e-mail e o código privado compartilhado pela família para entrar.</p>
     </section>
     <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
   </main>;
@@ -280,7 +299,7 @@ export default function Home() {
 
   return <div className="app-shell">
     <aside className={cn("sidebar", !sidebarOpen && "mobile-hidden")}>
-      <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/manus-storage/ChatForAll-Logo-cropped_4e47447c.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
+      <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/icon-192.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
       <button className="account-card" onClick={() => setProfileOpen(true)}><Avatar name={profile.data.name} url={profile.data.avatarUrl} /><span><strong>{profile.data.name}</strong><small>{profile.data.status || "Disponível"}</small></span><MoreHorizontal /></button>
       <div className="sidebar-search"><Search /><Input placeholder="Pesquisar conversas" onChange={event => { const term = event.target.value.toLowerCase(); if (!term) return; const match = conversations.data?.find(item => item.participant?.name?.toLowerCase().includes(term)); if (match) setSelectedId(match.id); }} /></div>
       <div className="conversation-list">{conversations.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando conversas</div>}{!conversations.isLoading && !conversations.data?.length && <div className="clean-empty"><MessageCircleMore /><strong>Suas conversas começam aqui.</strong><span>Crie uma nova conversa para falar com alguém da família.</span><Button variant="outline" onClick={() => setNewChatOpen(true)}><UserRoundPlus /> Nova conversa</Button></div>}{conversations.data?.map(conversation => <button key={conversation.id} className={cn("conversation-row", selectedId === conversation.id && "active", conversation.unreadCount > 0 && "unread")} onClick={() => chooseConversation(conversation.id)}><Avatar name={conversation.participant?.name || conversation.title} url={conversation.participant?.avatarUrl} /><span className="conversation-copy"><span><strong>{conversation.participant?.name || conversation.title || "Conversa"}</strong><time>{formatTime(conversation.latestMessage?.createdAt)}</time></span><span><small>{conversation.latestMessage?.deletedAt ? "Mensagem apagada" : conversation.latestMessage?.messageType === "image" ? "Imagem" : conversation.latestMessage?.messageType === "audio" ? "Mensagem de voz" : conversation.latestMessage?.messageType === "file" ? "Documento" : conversation.latestMessage?.content || "Conversa iniciada"}</small>{conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}</span></span></button>)}</div>

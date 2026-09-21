@@ -1,7 +1,6 @@
-// api/entry.ts
-import "dotenv/config";
-import crypto4 from "crypto";
+// api/serverless.ts
 import express from "express";
+import crypto4 from "crypto";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // shared/const.ts
@@ -248,11 +247,12 @@ function isSecureRequest(req) {
   return protoList.some((proto) => proto.trim().toLowerCase() === "https");
 }
 function getSessionCookieOptions(req) {
+  const isHttps = isSecureRequest(req) || process.env.NODE_ENV === "production";
   return {
-    httpOnly: true,
+    httpOnly: false,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req)
+    sameSite: "lax",
+    secure: isHttps
   };
 }
 
@@ -445,13 +445,14 @@ var SDKServer = class {
     };
   }
   async authenticateRequest(req) {
-    const cookies = this.parseCookies(req.headers.cookie);
-    let sessionToken = cookies.get(COOKIE_NAME);
+    let sessionToken;
+    const authHeader = req.headers.authorization;
+    if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
+      sessionToken = authHeader.slice(7);
+    }
     if (!sessionToken) {
-      const authHeader = req.headers.authorization;
-      if (typeof authHeader === "string" && authHeader.startsWith("Bearer ")) {
-        sessionToken = authHeader.slice(7);
-      }
+      const cookies = this.parseCookies(req.headers.cookie);
+      sessionToken = cookies.get(COOKIE_NAME);
     }
     const session = await this.verifySession(sessionToken);
     if (!session) {
@@ -1286,7 +1287,7 @@ var appRouter = router({
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      return user;
+      return { user, sessionToken };
     }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -1315,8 +1316,9 @@ async function createContext(opts) {
   };
 }
 
-// api/entry.ts
+// api/serverless.ts
 var app = express();
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
@@ -1382,7 +1384,7 @@ app.use(
     createContext
   })
 );
-var entry_default = app;
+var serverless_default = app;
 export {
-  entry_default as default
+  serverless_default as default
 };
