@@ -44,7 +44,6 @@ export function useAuth(options?: UseAuthOptions) {
       // backend cookie is cleared by the logout mutation.
       try {
         sessionStorage.removeItem("manus-cookie");
-        localStorage.removeItem("manus-cookie");
       } catch {}
       utils.auth.me.setData(undefined, null);
       await utils.auth.me.invalidate();

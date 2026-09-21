@@ -12,8 +12,13 @@ const queryClient = new QueryClient();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
-  // No CasaChat da Família, a autenticação é simples e local (SimpleAuthModal).
-  // Não redirecionamos a janela para servidores OAuth externos.
+  if (typeof window === "undefined") return;
+
+  const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
+
+  if (!isUnauthorized) return;
+
+  startLogin();
 };
 
 queryClient.getQueryCache().subscribe(event => {
@@ -38,23 +43,22 @@ const trpcClient = trpc.createClient({
       url: "/api/trpc",
       transformer: superjson,
       headers() {
+        // Preview auto-login fallback: when the browser blocks iframe cookies
+        // (Safari ITP / private browsing / WebView), the runtime mirrors the
+        // session into sessionStorage so we can forward it as a Bearer token.
+        // The regular OAuth cookie flow keeps working and takes priority server-side.
         try {
-          const raw =
-            localStorage.getItem("manus-cookie") ||
-            sessionStorage.getItem("manus-cookie");
+          const raw = sessionStorage.getItem("manus-cookie");
           if (raw) {
             const prefix = `${COOKIE_NAME}=`;
-            let token = raw;
-            if (raw.includes(prefix)) {
-              const pair = raw.split(";").find((s) => s.trim().startsWith(prefix));
-              token = pair ? pair.trim().slice(prefix.length) : raw;
-            }
-            if (token && token.trim()) {
-              return { Authorization: `Bearer ${token.trim()}` };
+            const pair = raw.split(";").find(s => s.trim().startsWith(prefix));
+            const token = pair?.trim().slice(prefix.length);
+            if (token) {
+              return { Authorization: `Bearer ${token}` };
             }
           }
         } catch {
-          // storage unavailable
+          // sessionStorage unavailable
         }
         return {};
       },

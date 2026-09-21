@@ -1,5 +1,6 @@
 // api/entry.ts
 import "dotenv/config";
+import crypto4 from "crypto";
 import express from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
@@ -29,67 +30,139 @@ var decodeOAuthState = (state) => {
 import { parse as parseCookieHeader2 } from "cookie";
 
 // server/db.ts
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
+import crypto2 from "crypto";
 
 // drizzle/schema.ts
-import { boolean, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
-var users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
-  name: text("name"),
-  email: varchar("email", { length: 320 }),
-  avatarUrl: text("avatarUrl"),
-  statusMessage: varchar("statusMessage", { length: 255 }).default("Oi fam\xEDlia, estou usando o CasaChat!"),
-  loginMethod: varchar("loginMethod", { length: 64 }).default("family_simple"),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
-});
-var conversations = mysqlTable("conversations", {
-  id: int("id").autoincrement().primaryKey(),
-  type: mysqlEnum("type", ["direct", "group"]).notNull().default("direct"),
-  name: varchar("name", { length: 120 }),
-  description: text("description"),
-  avatarUrl: text("avatarUrl"),
-  createdById: int("createdById").notNull(),
-  lastMessageText: text("lastMessageText"),
-  lastMessageAt: timestamp("lastMessageAt").defaultNow().notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
-});
-var conversationMembers = mysqlTable("conversation_members", {
-  id: int("id").autoincrement().primaryKey(),
-  conversationId: int("conversationId").notNull(),
-  userId: int("userId").notNull(),
-  role: mysqlEnum("role", ["admin", "member"]).default("member").notNull(),
-  joinedAt: timestamp("joinedAt").defaultNow().notNull(),
-  lastReadAt: timestamp("lastReadAt").defaultNow().notNull()
-});
-var messages = mysqlTable("messages", {
-  id: int("id").autoincrement().primaryKey(),
-  conversationId: int("conversationId").notNull(),
-  senderId: int("senderId").notNull(),
-  content: text("content"),
-  mediaUrl: text("mediaUrl"),
-  mediaType: varchar("mediaType", { length: 32 }),
-  fileName: varchar("fileName", { length: 255 }),
-  isPinned: boolean("isPinned").default(false).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
-});
-var messageReactions = mysqlTable("message_reactions", {
-  id: int("id").autoincrement().primaryKey(),
-  messageId: int("messageId").notNull(),
-  userId: int("userId").notNull(),
-  emoji: varchar("emoji", { length: 16 }).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull()
-});
+import { index, int, mysqlEnum, mysqlTable, primaryKey, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+var users = mysqlTable(
+  "users",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    openId: varchar("openId", { length: 64 }).notNull().unique(),
+    name: varchar("name", { length: 120 }),
+    email: varchar("email", { length: 320 }).unique(),
+    avatarKey: varchar("avatarKey", { length: 512 }),
+    avatarUrl: varchar("avatarUrl", { length: 1024 }),
+    status: varchar("status", { length: 280 }).notNull().default("Dispon\xEDvel"),
+    lastSeen: timestamp("lastSeen").defaultNow().notNull(),
+    loginMethod: varchar("loginMethod", { length: 64 }),
+    role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
+  },
+  (table) => [index("users_name_idx").on(table.name)]
+);
+var conversations = mysqlTable(
+  "conversations",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    type: mysqlEnum("type", ["direct", "group"]).notNull().default("direct"),
+    directKey: varchar("directKey", { length: 64 }).unique(),
+    title: varchar("title", { length: 160 }),
+    groupOwnerId: int("groupOwnerId").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+  },
+  (table) => [index("conversations_activity_idx").on(table.updatedAt)]
+);
+var conversationMembers = mysqlTable(
+  "conversation_members",
+  {
+    conversationId: int("conversationId").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    memberRole: mysqlEnum("memberRole", ["member", "admin"]).notNull().default("member"),
+    joinedAt: timestamp("joinedAt").defaultNow().notNull(),
+    lastReadAt: timestamp("lastReadAt")
+  },
+  (table) => [primaryKey({ columns: [table.conversationId, table.userId] }), index("members_user_idx").on(table.userId)]
+);
+var messages = mysqlTable(
+  "messages",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    conversationId: int("conversationId").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    senderId: int("senderId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    messageType: mysqlEnum("messageType", ["text", "image", "audio", "file", "system"]).notNull().default("text"),
+    content: text("content"),
+    fileKey: varchar("fileKey", { length: 512 }),
+    fileUrl: varchar("fileUrl", { length: 1024 }),
+    fileName: varchar("fileName", { length: 255 }),
+    fileSize: int("fileSize"),
+    mimeType: varchar("mimeType", { length: 128 }),
+    duration: int("duration"),
+    replyToId: int("replyToId"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+    deletedAt: timestamp("deletedAt")
+  },
+  (table) => [index("messages_conversation_created_idx").on(table.conversationId, table.createdAt), index("messages_sender_idx").on(table.senderId)]
+);
+var messageStatuses = mysqlTable(
+  "message_status",
+  {
+    messageId: int("messageId").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    status: mysqlEnum("status", ["sent", "delivered", "read"]).notNull().default("sent"),
+    timestamp: timestamp("timestamp").defaultNow().notNull()
+  },
+  (table) => [primaryKey({ columns: [table.messageId, table.userId] }), index("status_user_idx").on(table.userId)]
+);
+var messageDeletions = mysqlTable(
+  "message_deletions",
+  {
+    messageId: int("messageId").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    deletedAt: timestamp("deletedAt").defaultNow().notNull()
+  },
+  (table) => [primaryKey({ columns: [table.messageId, table.userId] }), index("deletions_user_idx").on(table.userId)]
+);
+var calls = mysqlTable(
+  "calls",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    conversationId: int("conversationId").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    callerId: int("callerId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    receiverId: int("receiverId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    type: mysqlEnum("type", ["audio", "video"]).notNull(),
+    status: mysqlEnum("status", ["ringing", "connecting", "active", "ended", "declined", "missed", "failed"]).notNull().default("ringing"),
+    startedAt: timestamp("startedAt").defaultNow().notNull(),
+    answeredAt: timestamp("answeredAt"),
+    endedAt: timestamp("endedAt"),
+    duration: int("duration").notNull().default(0)
+  },
+  (table) => [index("calls_receiver_status_idx").on(table.receiverId, table.status), index("calls_conversation_idx").on(table.conversationId, table.startedAt)]
+);
+var callSignals = mysqlTable(
+  "call_signals",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    callId: int("callId").notNull().references(() => calls.id, { onDelete: "cascade" }),
+    senderId: int("senderId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    receiverId: int("receiverId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    kind: mysqlEnum("kind", ["offer", "answer", "candidate", "hangup"]).notNull(),
+    payload: text("payload").notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull()
+  },
+  (table) => [index("signals_receiver_idx").on(table.receiverId, table.createdAt)]
+);
+var typingStates = mysqlTable(
+  "typing_states",
+  {
+    conversationId: int("conversationId").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: timestamp("expiresAt").notNull(),
+    updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+  },
+  (table) => [primaryKey({ columns: [table.conversationId, table.userId] }), index("typing_expiry_idx").on(table.expiresAt)]
+);
 
 // server/_core/env.ts
 var ENV = {
-  appId: process.env.VITE_APP_ID || "casachat_family",
-  cookieSecret: process.env.JWT_SECRET || "casachat_family_secret_key_2026",
+  appId: process.env.VITE_APP_ID ?? "",
+  cookieSecret: process.env.JWT_SECRET ?? "",
   databaseUrl: process.env.DATABASE_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
@@ -99,70 +172,36 @@ var ENV = {
 };
 
 // server/db.ts
-var _db = null;
+var database = null;
 async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!database && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      database = drizzle(process.env.DATABASE_URL);
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
+      console.error("[Database] Connection initialization failed", error);
+      database = null;
     }
   }
-  return _db;
+  return database;
 }
 async function upsertUser(user) {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
+  if (!user.openId) throw new Error("User openId is required");
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
+  if (!db) throw new Error("Database is unavailable");
+  const values = {
+    openId: user.openId,
+    name: user.name ?? "",
+    lastSignedIn: user.lastSignedIn ?? /* @__PURE__ */ new Date(),
+    role: user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user")
+  };
+  const updateSet = { lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date() };
+  for (const field of ["name", "email", "loginMethod"]) {
+    if (user[field] != null) {
+      values[field] = user[field];
+      updateSet[field] = user[field];
+    }
   }
-  try {
-    const values = {
-      openId: user.openId,
-      name: user.name ?? "",
-      email: user.email ?? null,
-      avatarUrl: user.avatarUrl ?? null,
-      statusMessage: user.statusMessage ?? "Oi fam\xEDlia, estou usando o CasaChat!",
-      loginMethod: user.loginMethod ?? "family_simple"
-    };
-    const updateSet = {};
-    const textFields = ["name", "email", "loginMethod", "avatarUrl", "statusMessage"];
-    textFields.forEach((field) => {
-      const value = user[field];
-      if (value !== void 0) {
-        const normalized = value ?? null;
-        values[field] = normalized;
-        updateSet[field] = normalized;
-      }
-    });
-    if (user.lastSignedIn !== void 0) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== void 0) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = /* @__PURE__ */ new Date();
-    }
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = /* @__PURE__ */ new Date();
-    }
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
 async function getUserByOpenId(openId) {
   const db = await getDb();
@@ -170,288 +209,34 @@ async function getUserByOpenId(openId) {
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
   return result[0];
 }
+async function requireDatabase() {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable");
+  return db;
+}
 async function getUserByEmail(email) {
   const db = await getDb();
   if (!db) return void 0;
-  const normalized = email.trim().toLowerCase();
-  const result = await db.select().from(users).where(eq(users.email, normalized)).limit(1);
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return result[0];
 }
-async function getUserById(id) {
+async function upsertLocalUser(input) {
   const db = await getDb();
-  if (!db) return void 0;
-  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-  return result[0];
-}
-async function listAllUsers() {
-  const db = await getDb();
-  if (!db) return [];
-  return db.select().from(users).orderBy(users.name);
-}
-async function updateProfile(userId, data) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(users).set(data).where(eq(users.id, userId));
-}
-async function createConversation(data) {
-  const db = await getDb();
-  if (!db) throw new Error("Banco de dados indispon\xEDvel");
-  const [inserted] = await db.insert(conversations).values({
-    type: data.type,
-    name: data.name ?? null,
-    description: data.description ?? null,
-    avatarUrl: data.avatarUrl ?? null,
-    createdById: data.createdById,
-    lastMessageText: "Conversa criada",
-    lastMessageAt: /* @__PURE__ */ new Date()
-  });
-  const conversationId = inserted.insertId;
-  const uniqueMemberIds = Array.from(/* @__PURE__ */ new Set([data.createdById, ...data.memberUserIds]));
-  for (const uid of uniqueMemberIds) {
-    await db.insert(conversationMembers).values({
-      conversationId,
-      userId: uid,
-      role: uid === data.createdById ? "admin" : "member",
-      joinedAt: /* @__PURE__ */ new Date(),
-      lastReadAt: /* @__PURE__ */ new Date()
-    });
+  if (!db) throw new Error("Database is unavailable");
+  const email = input.email.trim().toLowerCase();
+  const name = input.name.trim();
+  const existing = await getUserByEmail(email);
+  if (existing) {
+    await db.update(users).set({ name, lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date(), loginMethod: "family-code" }).where(eq(users.id, existing.id));
+    const refreshed = await db.select().from(users).where(eq(users.id, existing.id)).limit(1);
+    return refreshed[0] || existing;
   }
-  return conversationId;
-}
-async function findDirectConversation(userA, userB) {
-  const db = await getDb();
-  if (!db) return null;
-  const directConvs = await db.select({
-    id: conversations.id
-  }).from(conversations).where(eq(conversations.type, "direct"));
-  for (const conv of directConvs) {
-    const members = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(eq(conversationMembers.conversationId, conv.id));
-    const ids = members.map((m) => m.userId);
-    if (ids.length === 2 && ids.includes(userA) && ids.includes(userB)) {
-      return conv.id;
-    }
-  }
-  return null;
-}
-async function ensureUserInFamilyGroup(userId) {
-  const db = await getDb();
-  if (!db) return null;
-  try {
-    const existingGroups = await db.select().from(conversations).where(eq(conversations.type, "group")).limit(10);
-    let familyGroup = existingGroups.find((g) => g.name?.includes("Fam\xEDlia")) || existingGroups[0];
-    if (!familyGroup) {
-      const [inserted] = await db.insert(conversations).values({
-        type: "group",
-        name: "\u{1F3E1} Grupo da Fam\xEDlia",
-        description: "Nosso espa\xE7o oficial para bater papo, mandar fotos e dar bom dia!",
-        avatarUrl: "https://api.dicebear.com/7.x/bottts/svg?seed=FamiliaReunida",
-        createdById: userId,
-        lastMessageText: "Bem-vindos ao Grupo da Fam\xEDlia!",
-        lastMessageAt: /* @__PURE__ */ new Date()
-      });
-      const groupId = inserted.insertId;
-      familyGroup = { id: groupId };
-      await db.insert(messages).values({
-        conversationId: groupId,
-        senderId: userId,
-        content: "\u{1F44B} Bem-vindos ao cantinho oficial da nossa fam\xEDlia no CasaChat! Sintam-se em casa para conversar e mandar fotos \u2764\uFE0F",
-        type: "system",
-        createdAt: /* @__PURE__ */ new Date()
-      });
-    }
-    const membership = await db.select().from(conversationMembers).where(
-      and(
-        eq(conversationMembers.conversationId, familyGroup.id),
-        eq(conversationMembers.userId, userId)
-      )
-    ).limit(1);
-    if (membership.length === 0) {
-      await db.insert(conversationMembers).values({
-        conversationId: familyGroup.id,
-        userId,
-        role: "member",
-        joinedAt: /* @__PURE__ */ new Date(),
-        lastReadAt: /* @__PURE__ */ new Date()
-      });
-    }
-    const allUsers = await db.select({ id: users.id }).from(users);
-    const currentMembers = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(eq(conversationMembers.conversationId, familyGroup.id));
-    const memberSet = new Set(currentMembers.map((m) => m.userId));
-    for (const u of allUsers) {
-      if (!memberSet.has(u.id)) {
-        try {
-          await db.insert(conversationMembers).values({
-            conversationId: familyGroup.id,
-            userId: u.id,
-            role: "member",
-            joinedAt: /* @__PURE__ */ new Date(),
-            lastReadAt: /* @__PURE__ */ new Date()
-          });
-        } catch {
-        }
-      }
-    }
-    return familyGroup.id;
-  } catch (err) {
-    console.error("[Database] Error in ensureUserInFamilyGroup:", err);
-    return null;
-  }
-}
-async function listUserConversations(userId) {
-  const db = await getDb();
-  if (!db) return [];
-  const memberEntries = await db.select({ conversationId: conversationMembers.conversationId }).from(conversationMembers).where(eq(conversationMembers.userId, userId));
-  if (memberEntries.length === 0) return [];
-  const convIds = memberEntries.map((m) => m.conversationId);
-  const convList = await db.select().from(conversations).where(inArray(conversations.id, convIds)).orderBy(desc(conversations.lastMessageAt));
-  const results = [];
-  for (const c of convList) {
-    const members = await db.select({
-      id: users.id,
-      name: users.name,
-      email: users.email,
-      avatarUrl: users.avatarUrl,
-      statusMessage: users.statusMessage,
-      role: conversationMembers.role,
-      lastReadAt: conversationMembers.lastReadAt
-    }).from(conversationMembers).innerJoin(users, eq(users.id, conversationMembers.userId)).where(eq(conversationMembers.conversationId, c.id));
-    const userMember = members.find((m) => m.id === userId);
-    let unreadCount = 0;
-    if (userMember) {
-      const unread = await db.select({ count: sql`count(*)` }).from(messages).where(
-        and(
-          eq(messages.conversationId, c.id),
-          sql`${messages.createdAt} > ${userMember.lastReadAt}`,
-          sql`${messages.senderId} != ${userId}`
-        )
-      );
-      unreadCount = Number(unread[0]?.count ?? 0);
-    }
-    results.push({
-      ...c,
-      members,
-      unreadCount
-    });
-  }
-  return results;
-}
-async function getConversationDetails(conversationId, userId) {
-  const db = await getDb();
-  if (!db) return null;
-  const conv = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);
-  if (conv.length === 0) return null;
-  const isMember = await db.select().from(conversationMembers).where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId))).limit(1);
-  if (isMember.length === 0) return null;
-  const members = await db.select({
-    id: users.id,
-    name: users.name,
-    email: users.email,
-    avatarUrl: users.avatarUrl,
-    statusMessage: users.statusMessage,
-    role: conversationMembers.role
-  }).from(conversationMembers).innerJoin(users, eq(users.id, conversationMembers.userId)).where(eq(conversationMembers.conversationId, conversationId));
-  return {
-    ...conv[0],
-    members
-  };
-}
-async function removeMemberFromConversation(conversationId, userId) {
-  const db = await getDb();
-  if (!db) return;
-  await db.delete(conversationMembers).where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
-}
-async function markConversationAsRead(conversationId, userId) {
-  const db = await getDb();
-  if (!db) return;
-  await db.update(conversationMembers).set({ lastReadAt: /* @__PURE__ */ new Date() }).where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)));
-}
-async function listConversationMessages(conversationId, limitCount = 100) {
-  const db = await getDb();
-  if (!db) return [];
-  const msgs = await db.select({
-    id: messages.id,
-    conversationId: messages.conversationId,
-    senderId: messages.senderId,
-    content: messages.content,
-    mediaUrl: messages.mediaUrl,
-    mediaType: messages.mediaType,
-    fileName: messages.fileName,
-    isPinned: messages.isPinned,
-    createdAt: messages.createdAt,
-    senderName: users.name,
-    senderAvatar: users.avatarUrl
-  }).from(messages).innerJoin(users, eq(users.id, messages.senderId)).where(eq(messages.conversationId, conversationId)).orderBy(messages.createdAt).limit(limitCount);
-  const msgIds = msgs.map((m) => m.id);
-  let reactionsList = [];
-  if (msgIds.length > 0) {
-    reactionsList = await db.select({
-      id: messageReactions.id,
-      messageId: messageReactions.messageId,
-      userId: messageReactions.userId,
-      emoji: messageReactions.emoji,
-      createdAt: messageReactions.createdAt,
-      userName: users.name
-    }).from(messageReactions).innerJoin(users, eq(users.id, messageReactions.userId)).where(inArray(messageReactions.messageId, msgIds));
-  }
-  return msgs.map((m) => ({
-    ...m,
-    reactions: reactionsList.filter((r) => r.messageId === m.id)
-  }));
-}
-async function sendMessage(data) {
-  const db = await getDb();
-  if (!db) throw new Error("Banco de dados indispon\xEDvel");
-  const [inserted] = await db.insert(messages).values({
-    conversationId: data.conversationId,
-    senderId: data.senderId,
-    content: data.content ?? null,
-    mediaUrl: data.mediaUrl ?? null,
-    mediaType: data.mediaType ?? null,
-    fileName: data.fileName ?? null,
-    createdAt: /* @__PURE__ */ new Date()
-  });
-  const previewText = data.content ? data.content.slice(0, 80) : data.mediaType === "image" ? "\u{1F4F7} Foto" : "\u{1F4CE} Anexo";
-  await db.update(conversations).set({
-    lastMessageText: previewText,
-    lastMessageAt: /* @__PURE__ */ new Date()
-  }).where(eq(conversations.id, data.conversationId));
-  await markConversationAsRead(data.conversationId, data.senderId);
-  return inserted.insertId;
-}
-async function toggleMessageReaction(data) {
-  const db = await getDb();
-  if (!db) return;
-  const existing = await db.select().from(messageReactions).where(
-    and(
-      eq(messageReactions.messageId, data.messageId),
-      eq(messageReactions.userId, data.userId),
-      eq(messageReactions.emoji, data.emoji)
-    )
-  ).limit(1);
-  if (existing.length > 0) {
-    await db.delete(messageReactions).where(eq(messageReactions.id, existing[0].id));
-  } else {
-    await db.insert(messageReactions).values({
-      messageId: data.messageId,
-      userId: data.userId,
-      emoji: data.emoji,
-      createdAt: /* @__PURE__ */ new Date()
-    });
-  }
-}
-async function addMemberToConversation(conversationId, targetUserId) {
-  const db = await getDb();
-  if (!db) return;
-  const exists = await db.select().from(conversationMembers).where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, targetUserId))).limit(1);
-  if (exists.length === 0) {
-    await db.insert(conversationMembers).values({
-      conversationId,
-      userId: targetUserId,
-      role: "member",
-      joinedAt: /* @__PURE__ */ new Date(),
-      lastReadAt: /* @__PURE__ */ new Date()
-    });
-  }
+  const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+  const now = /* @__PURE__ */ new Date();
+  await db.insert(users).values({ openId, name, email, loginMethod: "family-code", lastSignedIn: now }).onDuplicateKeyUpdate({ set: { name, lastSignedIn: now, lastSeen: now, loginMethod: "family-code" } });
+  const user = await getUserByOpenId(openId);
+  if (!user) throw new Error("Local user could not be created");
+  return user;
 }
 
 // server/_core/cookies.ts
@@ -463,12 +248,11 @@ function isSecureRequest(req) {
   return protoList.some((proto) => proto.trim().toLowerCase() === "https");
 }
 function getSessionCookieOptions(req) {
-  const isSecure = isSecureRequest(req);
   return {
     httpOnly: true,
     path: "/",
-    sameSite: isSecure ? "none" : "lax",
-    secure: isSecure
+    sameSite: "none",
+    secure: isSecureRequest(req)
   };
 }
 
@@ -599,8 +383,8 @@ var SDKServer = class {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId || "casachat_family",
-        name: options.name || "Membro da Fam\xEDlia"
+        appId: ENV.appId,
+        name: options.name || ""
       },
       options
     );
@@ -612,8 +396,8 @@ var SDKServer = class {
     const secretKey = this.getSessionSecret();
     return new SignJWT({
       openId: payload.openId,
-      appId: payload.appId || "casachat_family",
-      name: payload.name || "Membro da Fam\xEDlia"
+      appId: payload.appId,
+      name: payload.name
     }).setProtectedHeader({ alg: "HS256", typ: "JWT" }).setExpirationTime(expirationSeconds).sign(secretKey);
   }
   async verifySession(cookieValue) {
@@ -627,14 +411,14 @@ var SDKServer = class {
         algorithms: ["HS256"]
       });
       const { openId, appId, name } = payload;
-      if (!isNonEmptyString(openId)) {
-        console.warn("[Auth] Session payload missing required openId");
+      if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
+        console.warn("[Auth] Session payload missing required fields");
         return null;
       }
       return {
         openId,
-        appId: isNonEmptyString(appId) ? appId : ENV.appId || "casachat_family",
-        name: isNonEmptyString(name) ? name : "Membro da Fam\xEDlia"
+        appId,
+        name
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -819,11 +603,8 @@ function registerStorageProxy(app2) {
 }
 
 // server/routers.ts
-import fs from "fs";
-import path from "path";
-import { TRPCError as TRPCError3 } from "@trpc/server";
-import { sql as sql2 } from "drizzle-orm";
-import { z as z2 } from "zod";
+import { TRPCError as TRPCError7 } from "@trpc/server";
+import { z as z6 } from "zod";
 
 // server/_core/systemRouter.ts
 import { z } from "zod";
@@ -968,6 +749,197 @@ var systemRouter = router({
   })
 });
 
+// server/localAuth.ts
+import crypto3 from "crypto";
+function validateFamilyCode(candidate) {
+  const configured = process.env.CHATFORALL_FAMILY_CODE || "";
+  if (!configured || !candidate) return false;
+  const expected = Buffer.from(configured, "utf8");
+  const actual = Buffer.from(candidate, "utf8");
+  return expected.length === actual.length && crypto3.timingSafeEqual(expected, actual);
+}
+
+// server/routers/calls.ts
+import { TRPCError as TRPCError3 } from "@trpc/server";
+import { and, desc, eq as eq2, gt, inArray, or } from "drizzle-orm";
+import { z as z2 } from "zod";
+
+// server/realtime.ts
+var subscribers = /* @__PURE__ */ new Set();
+function subscribeRealtime(userId, send) {
+  const subscriber = { userId, send };
+  subscribers.add(subscriber);
+  return () => subscribers.delete(subscriber);
+}
+function publishRealtime(userIds, event) {
+  const audience = new Set(userIds);
+  subscribers.forEach((subscriber) => {
+    if (audience.has(subscriber.userId)) {
+      try {
+        subscriber.send({ ...event, at: Date.now() });
+      } catch {
+        subscribers.delete(subscriber);
+      }
+    }
+  });
+}
+
+// server/routers/calls.ts
+async function callWithAccess(callId, userId) {
+  const db = await requireDatabase();
+  const found = await db.select().from(calls).where(eq2(calls.id, callId)).limit(1);
+  const call = found[0];
+  if (!call) throw new TRPCError3({ code: "NOT_FOUND", message: "Chamada n\xE3o encontrada." });
+  if (call.callerId !== userId && call.receiverId !== userId) throw new TRPCError3({ code: "FORBIDDEN", message: "Voc\xEA n\xE3o participa desta chamada." });
+  return { db, call };
+}
+var callsRouter = router({
+  start: protectedProcedure.input(z2.object({ conversationId: z2.number().int().positive(), type: z2.enum(["audio", "video"]) })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    const members = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(eq2(conversationMembers.conversationId, input.conversationId));
+    if (!members.some((member) => member.userId === ctx.user.id)) throw new TRPCError3({ code: "FORBIDDEN" });
+    if (members.length !== 2) throw new TRPCError3({ code: "BAD_REQUEST", message: "As chamadas individuais requerem dois participantes." });
+    const receiverId = members.find((member) => member.userId !== ctx.user.id)?.userId;
+    if (!receiverId) throw new TRPCError3({ code: "BAD_REQUEST" });
+    const busy = await db.select({ id: calls.id }).from(calls).where(and(inArray(calls.status, ["ringing", "connecting", "active"]), or(eq2(calls.callerId, receiverId), eq2(calls.receiverId, receiverId)))).limit(1);
+    if (busy[0]) throw new TRPCError3({ code: "CONFLICT", message: "Esta pessoa j\xE1 est\xE1 em outra chamada." });
+    const created = await db.insert(calls).values({ conversationId: input.conversationId, callerId: ctx.user.id, receiverId, type: input.type, status: "ringing" });
+    const callId = Number(created[0].insertId);
+    publishRealtime([ctx.user.id, receiverId], { type: "call", callId });
+    return { callId, receiverId };
+  }),
+  pending: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDatabase();
+    const current = await db.select({
+      id: calls.id,
+      conversationId: calls.conversationId,
+      callerId: calls.callerId,
+      receiverId: calls.receiverId,
+      type: calls.type,
+      status: calls.status,
+      startedAt: calls.startedAt,
+      answeredAt: calls.answeredAt,
+      callerName: users.name,
+      callerAvatar: users.avatarUrl
+    }).from(calls).innerJoin(users, eq2(calls.callerId, users.id)).where(and(or(eq2(calls.callerId, ctx.user.id), eq2(calls.receiverId, ctx.user.id)), inArray(calls.status, ["ringing", "connecting", "active"]))).orderBy(desc(calls.startedAt)).limit(1);
+    return current[0] ?? null;
+  }),
+  respond: protectedProcedure.input(z2.object({ callId: z2.number().int().positive(), accept: z2.boolean() })).mutation(async ({ ctx, input }) => {
+    const { db, call } = await callWithAccess(input.callId, ctx.user.id);
+    if (call.receiverId !== ctx.user.id) throw new TRPCError3({ code: "FORBIDDEN", message: "Somente o destinat\xE1rio pode responder." });
+    if (call.status !== "ringing") throw new TRPCError3({ code: "CONFLICT", message: "Esta chamada n\xE3o est\xE1 mais aguardando resposta." });
+    if (!input.accept) {
+      await db.update(calls).set({ status: "declined", endedAt: /* @__PURE__ */ new Date() }).where(eq2(calls.id, call.id));
+      publishRealtime([call.callerId, call.receiverId], { type: "call", callId: call.id });
+      return { status: "declined" };
+    }
+    await db.update(calls).set({ status: "connecting", answeredAt: /* @__PURE__ */ new Date() }).where(eq2(calls.id, call.id));
+    publishRealtime([call.callerId, call.receiverId], { type: "call", callId: call.id });
+    return { status: "connecting" };
+  }),
+  setActive: protectedProcedure.input(z2.object({ callId: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const { db, call } = await callWithAccess(input.callId, ctx.user.id);
+    if (!["ringing", "connecting"].includes(call.status)) return { status: call.status };
+    await db.update(calls).set({ status: "active", answeredAt: call.answeredAt ?? /* @__PURE__ */ new Date() }).where(eq2(calls.id, call.id));
+    return { status: "active" };
+  }),
+  end: protectedProcedure.input(z2.object({ callId: z2.number().int().positive(), reason: z2.enum(["ended", "missed", "failed"]).default("ended") })).mutation(async ({ ctx, input }) => {
+    const { db, call } = await callWithAccess(input.callId, ctx.user.id);
+    if (["ended", "declined", "missed", "failed"].includes(call.status)) return { success: true };
+    const endedAt = /* @__PURE__ */ new Date();
+    const reference = call.answeredAt ?? call.startedAt;
+    const duration = Math.max(0, Math.round((endedAt.getTime() - reference.getTime()) / 1e3));
+    await db.update(calls).set({ status: input.reason, endedAt, duration }).where(eq2(calls.id, call.id));
+    publishRealtime([call.callerId, call.receiverId], { type: "call", callId: call.id });
+    return { success: true };
+  }),
+  signal: protectedProcedure.input(z2.object({ callId: z2.number().int().positive(), kind: z2.enum(["offer", "answer", "candidate", "hangup"]), payload: z2.string().min(1).max(32e3) })).mutation(async ({ ctx, input }) => {
+    const { db, call } = await callWithAccess(input.callId, ctx.user.id);
+    if (["ended", "declined", "missed", "failed"].includes(call.status)) throw new TRPCError3({ code: "BAD_REQUEST", message: "A chamada j\xE1 foi encerrada." });
+    const receiverId = call.callerId === ctx.user.id ? call.receiverId : call.callerId;
+    await db.insert(callSignals).values({ callId: input.callId, senderId: ctx.user.id, receiverId, kind: input.kind, payload: input.payload });
+    return { success: true };
+  }),
+  signals: protectedProcedure.input(z2.object({ callId: z2.number().int().positive(), afterId: z2.number().int().nonnegative().default(0) })).query(async ({ ctx, input }) => {
+    const { db } = await callWithAccess(input.callId, ctx.user.id);
+    return db.select({ id: callSignals.id, kind: callSignals.kind, payload: callSignals.payload, createdAt: callSignals.createdAt }).from(callSignals).where(and(eq2(callSignals.callId, input.callId), eq2(callSignals.receiverId, ctx.user.id), gt(callSignals.id, input.afterId))).orderBy(callSignals.id).limit(50);
+  }),
+  history: protectedProcedure.input(z2.object({ conversationId: z2.number().int().positive() })).query(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    const allowed = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(and(eq2(conversationMembers.conversationId, input.conversationId), eq2(conversationMembers.userId, ctx.user.id))).limit(1);
+    if (!allowed[0]) throw new TRPCError3({ code: "FORBIDDEN" });
+    return db.select().from(calls).where(eq2(calls.conversationId, input.conversationId)).orderBy(desc(calls.startedAt)).limit(30);
+  })
+});
+
+// server/routers/groups.ts
+import { TRPCError as TRPCError4 } from "@trpc/server";
+import { and as and2, asc, eq as eq3, inArray as inArray2 } from "drizzle-orm";
+import { z as z3 } from "zod";
+async function membership(conversationId, userId) {
+  const db = await requireDatabase();
+  const result = await db.select({ role: conversationMembers.memberRole }).from(conversationMembers).where(and2(eq3(conversationMembers.conversationId, conversationId), eq3(conversationMembers.userId, userId))).limit(1);
+  if (!result[0]) throw new TRPCError4({ code: "FORBIDDEN", message: "Voc\xEA n\xE3o participa deste grupo." });
+  return { db, role: result[0].role };
+}
+var groupsRouter = router({
+  create: protectedProcedure.input(z3.object({ title: z3.string().trim().min(2).max(160), memberIds: z3.array(z3.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    const uniqueIds = Array.from(/* @__PURE__ */ new Set([ctx.user.id, ...input.memberIds])).filter((id) => id !== ctx.user.id);
+    const people = await db.select({ id: users.id }).from(users).where(inArray2(users.id, uniqueIds));
+    if (people.length !== uniqueIds.length) throw new TRPCError4({ code: "NOT_FOUND", message: "Uma ou mais pessoas n\xE3o foram encontradas." });
+    const created = await db.insert(conversations).values({ type: "group", title: input.title, groupOwnerId: ctx.user.id });
+    const conversationId = Number(created[0].insertId);
+    await db.insert(conversationMembers).values([
+      { conversationId, userId: ctx.user.id, memberRole: "admin", lastReadAt: /* @__PURE__ */ new Date() },
+      ...uniqueIds.map((userId) => ({ conversationId, userId, memberRole: "member" }))
+    ]);
+    publishRealtime([ctx.user.id, ...uniqueIds], { type: "conversation", conversationId });
+    return { conversationId };
+  }),
+  members: protectedProcedure.input(z3.object({ conversationId: z3.number().int().positive() })).query(async ({ ctx, input }) => {
+    const { db } = await membership(input.conversationId, ctx.user.id);
+    return db.select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, role: conversationMembers.memberRole, joinedAt: conversationMembers.joinedAt }).from(conversationMembers).innerJoin(users, eq3(conversationMembers.userId, users.id)).where(eq3(conversationMembers.conversationId, input.conversationId)).orderBy(asc(conversationMembers.joinedAt));
+  }),
+  addMembers: protectedProcedure.input(z3.object({ conversationId: z3.number().int().positive(), userIds: z3.array(z3.number().int().positive()).min(1).max(100) })).mutation(async ({ ctx, input }) => {
+    const { db, role } = await membership(input.conversationId, ctx.user.id);
+    if (role !== "admin") throw new TRPCError4({ code: "FORBIDDEN", message: "Apenas administradores podem adicionar pessoas." });
+    const existing = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(eq3(conversationMembers.conversationId, input.conversationId));
+    const existingIds = new Set(existing.map((row) => row.userId));
+    const candidates = Array.from(new Set(input.userIds)).filter((id) => !existingIds.has(id));
+    if (!candidates.length) return { added: 0 };
+    const people = await db.select({ id: users.id }).from(users).where(inArray2(users.id, candidates));
+    if (people.length !== candidates.length) throw new TRPCError4({ code: "NOT_FOUND", message: "Uma ou mais pessoas n\xE3o foram encontradas." });
+    await db.insert(conversationMembers).values(candidates.map((userId) => ({ conversationId: input.conversationId, userId, memberRole: "member" })));
+    await db.update(conversations).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq3(conversations.id, input.conversationId));
+    publishRealtime([ctx.user.id, ...candidates], { type: "conversation", conversationId: input.conversationId });
+    return { added: candidates.length };
+  }),
+  removeMember: protectedProcedure.input(z3.object({ conversationId: z3.number().int().positive(), userId: z3.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const { db, role } = await membership(input.conversationId, ctx.user.id);
+    if (role !== "admin" && input.userId !== ctx.user.id) throw new TRPCError4({ code: "FORBIDDEN", message: "Apenas administradores podem remover membros." });
+    const group = await db.select({ type: conversations.type, groupOwnerId: conversations.groupOwnerId }).from(conversations).where(eq3(conversations.id, input.conversationId)).limit(1);
+    if (!group[0] || group[0].type !== "group") throw new TRPCError4({ code: "BAD_REQUEST", message: "Esta conversa n\xE3o \xE9 um grupo." });
+    if (group[0].groupOwnerId === input.userId) throw new TRPCError4({ code: "BAD_REQUEST", message: "O administrador principal n\xE3o pode sair sem transferir a administra\xE7\xE3o." });
+    await db.delete(conversationMembers).where(and2(eq3(conversationMembers.conversationId, input.conversationId), eq3(conversationMembers.userId, input.userId)));
+    return { success: true };
+  }),
+  rename: protectedProcedure.input(z3.object({ conversationId: z3.number().int().positive(), title: z3.string().trim().min(2).max(160) })).mutation(async ({ ctx, input }) => {
+    const { db, role } = await membership(input.conversationId, ctx.user.id);
+    if (role !== "admin") throw new TRPCError4({ code: "FORBIDDEN", message: "Apenas administradores podem renomear o grupo." });
+    await db.update(conversations).set({ title: input.title, updatedAt: /* @__PURE__ */ new Date() }).where(eq3(conversations.id, input.conversationId));
+    return { success: true };
+  })
+});
+
+// server/routers/messaging.ts
+import { TRPCError as TRPCError5 } from "@trpc/server";
+import { and as and3, desc as desc2, eq as eq4, gt as gt2, inArray as inArray3, isNull, lt, ne as ne3, sql } from "drizzle-orm";
+import { z as z4 } from "zod";
+
+// server/media.ts
+import { nanoid } from "nanoid";
+
 // server/storage.ts
 function getForgeConfig() {
   const forgeUrl = ENV.forgeApiUrl;
@@ -1014,448 +986,318 @@ async function storagePut(relKey, data, contentType = "application/octet-stream"
   return { key, url: `/manus-storage/${key}` };
 }
 
+// server/media.ts
+var MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+var MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+var MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;
+var imageTypes = /* @__PURE__ */ new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+var audioTypes = /* @__PURE__ */ new Set(["audio/webm", "audio/ogg", "audio/mpeg", "audio/mp4", "audio/wav"]);
+var documentTypes = /* @__PURE__ */ new Set(["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/zip", "text/plain", "text/csv"]);
+function normalizeMimeType(rawMimeType) {
+  return rawMimeType.toLowerCase().split(";", 1)[0] || rawMimeType;
+}
+function parseMediaDataUrl(dataUrl) {
+  const match = /^data:([^,]+),([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!match) throw new Error("Formato de arquivo inv\xE1lido.");
+  const [, metadata, base64] = match;
+  if (!metadata.toLowerCase().split(";").includes("base64")) throw new Error("Formato de arquivo inv\xE1lido.");
+  const rawMimeType = metadata.split(";", 1)[0] || "application/octet-stream";
+  return { mimeType: normalizeMimeType(rawMimeType), base64 };
+}
+function extensionFor(mimeType) {
+  const mapped = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+    "audio/webm": "webm",
+    "audio/ogg": "ogg",
+    "audio/mpeg": "mp3",
+    "audio/mp4": "m4a",
+    "audio/wav": "wav",
+    "application/pdf": "pdf",
+    "application/msword": "doc",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/zip": "zip",
+    "text/plain": "txt",
+    "text/csv": "csv"
+  };
+  return mapped[mimeType] ?? "bin";
+}
+async function storeMedia(input) {
+  const { mimeType, base64 } = parseMediaDataUrl(input.dataUrl);
+  const allowed = input.kind === "audio" ? audioTypes : input.kind === "file" ? documentTypes : imageTypes;
+  const maxBytes = input.kind === "audio" ? MAX_AUDIO_BYTES : input.kind === "file" ? MAX_DOCUMENT_BYTES : MAX_IMAGE_BYTES;
+  if (!allowed.has(mimeType)) throw new Error("Tipo de arquivo n\xE3o permitido.");
+  const buffer = Buffer.from(base64, "base64");
+  if (!buffer.length || buffer.length > maxBytes) {
+    throw new Error(`O arquivo excede o limite de ${Math.floor(maxBytes / 1024 / 1024)} MB.`);
+  }
+  const prefix = input.kind === "avatar" ? "avatars" : input.kind === "audio" ? "audio" : input.kind === "file" ? "documents" : "images";
+  const safeName = `${nanoid(20)}.${extensionFor(mimeType)}`;
+  const { key, url } = await storagePut(`chatforall/${prefix}/${input.userId}/${safeName}`, buffer, mimeType);
+  return {
+    key,
+    url,
+    fileName: (input.originalName || safeName).replace(/[\\/<>:"|?*\u0000-\u001F]/g, "_").slice(0, 120),
+    mimeType,
+    fileSize: buffer.length
+  };
+}
+
+// server/routers/messaging.ts
+var pageInput = z4.object({ conversationId: z4.number().int().positive(), cursor: z4.coerce.date().optional() });
+var mediaInput = z4.object({
+  kind: z4.enum(["image", "audio", "file"]),
+  dataUrl: z4.string().max(18e6),
+  name: z4.string().max(120).optional(),
+  duration: z4.number().int().min(0).max(60 * 60).optional()
+});
+async function assertMember(conversationId, userId) {
+  const db = await requireDatabase();
+  const result = await db.select({ conversationId: conversationMembers.conversationId }).from(conversationMembers).where(and3(eq4(conversationMembers.conversationId, conversationId), eq4(conversationMembers.userId, userId))).limit(1);
+  if (!result[0]) throw new TRPCError5({ code: "FORBIDDEN", message: "Voc\xEA n\xE3o tem acesso a esta conversa." });
+  return db;
+}
+async function recipientIds(conversationId, userId) {
+  const db = await requireDatabase();
+  const rows = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(and3(eq4(conversationMembers.conversationId, conversationId), ne3(conversationMembers.userId, userId)));
+  if (!rows.length) throw new TRPCError5({ code: "BAD_REQUEST", message: "A conversa precisa ter outro participante." });
+  return rows.map((row) => row.userId);
+}
+function online(lastSeen) {
+  return Date.now() - lastSeen.getTime() < 7e4;
+}
+var messagingRouter = router({
+  createDirect: protectedProcedure.input(z4.object({ userId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    if (input.userId === ctx.user.id) throw new TRPCError5({ code: "BAD_REQUEST", message: "Escolha outra pessoa para conversar." });
+    const db = await requireDatabase();
+    const other = await db.select({ id: users.id }).from(users).where(eq4(users.id, input.userId)).limit(1);
+    if (!other[0]) throw new TRPCError5({ code: "NOT_FOUND", message: "Pessoa n\xE3o encontrada." });
+    const directKey = [ctx.user.id, input.userId].sort((a, b) => a - b).join(":");
+    const existing = await db.select({ id: conversations.id }).from(conversations).where(eq4(conversations.directKey, directKey)).limit(1);
+    if (existing[0]) return { conversationId: existing[0].id, created: false };
+    try {
+      const created = await db.insert(conversations).values({ type: "direct", directKey });
+      const conversationId = Number(created[0].insertId);
+      await db.insert(conversationMembers).values([
+        { conversationId, userId: ctx.user.id, lastReadAt: /* @__PURE__ */ new Date() },
+        { conversationId, userId: input.userId }
+      ]);
+      return { conversationId, created: true };
+    } catch (error) {
+      const concurrent = await db.select({ id: conversations.id }).from(conversations).where(eq4(conversations.directKey, directKey)).limit(1);
+      if (concurrent[0]) return { conversationId: concurrent[0].id, created: false };
+      throw error;
+    }
+  }),
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDatabase();
+    const memberships = await db.select({ id: conversations.id, type: conversations.type, title: conversations.title, updatedAt: conversations.updatedAt, lastReadAt: conversationMembers.lastReadAt }).from(conversationMembers).innerJoin(conversations, eq4(conversationMembers.conversationId, conversations.id)).where(eq4(conversationMembers.userId, ctx.user.id)).orderBy(desc2(conversations.updatedAt));
+    return Promise.all(memberships.map(async (conversation) => {
+      const partner = await db.select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(conversationMembers).innerJoin(users, eq4(conversationMembers.userId, users.id)).where(and3(eq4(conversationMembers.conversationId, conversation.id), ne3(users.id, ctx.user.id))).limit(1);
+      const latest = await db.select({ id: messages.id, content: messages.content, messageType: messages.messageType, createdAt: messages.createdAt, senderId: messages.senderId, deletedAt: messages.deletedAt }).from(messages).where(eq4(messages.conversationId, conversation.id)).orderBy(desc2(messages.createdAt)).limit(1);
+      const unread = await db.select({ count: sql`count(*)` }).from(messages).where(and3(
+        eq4(messages.conversationId, conversation.id),
+        ne3(messages.senderId, ctx.user.id),
+        isNull(messages.deletedAt),
+        conversation.lastReadAt ? gt2(messages.createdAt, conversation.lastReadAt) : sql`1 = 1`
+      ));
+      const person = partner[0];
+      return {
+        ...conversation,
+        participant: person ? { ...person, online: online(person.lastSeen) } : null,
+        latestMessage: latest[0] ?? null,
+        unreadCount: Number(unread[0]?.count ?? 0)
+      };
+    }));
+  }),
+  history: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
+    const db = await assertMember(input.conversationId, ctx.user.id);
+    const recipients = await recipientIds(input.conversationId, ctx.user.id);
+    const partnerId = recipients[0];
+    const entries = await db.select({
+      id: messages.id,
+      conversationId: messages.conversationId,
+      senderId: messages.senderId,
+      messageType: messages.messageType,
+      content: messages.content,
+      fileKey: messages.fileKey,
+      fileUrl: messages.fileUrl,
+      fileName: messages.fileName,
+      fileSize: messages.fileSize,
+      mimeType: messages.mimeType,
+      duration: messages.duration,
+      replyToId: messages.replyToId,
+      createdAt: messages.createdAt,
+      deletedAt: messages.deletedAt,
+      senderName: users.name
+    }).from(messages).innerJoin(users, eq4(messages.senderId, users.id)).leftJoin(messageDeletions, and3(eq4(messageDeletions.messageId, messages.id), eq4(messageDeletions.userId, ctx.user.id))).where(and3(
+      eq4(messages.conversationId, input.conversationId),
+      isNull(messageDeletions.messageId),
+      input.cursor ? lt(messages.createdAt, input.cursor) : sql`1 = 1`
+    )).orderBy(desc2(messages.createdAt)).limit(40);
+    const ids = entries.map((message) => message.id);
+    const statuses = ids.length ? await db.select({ messageId: messageStatuses.messageId, status: messageStatuses.status }).from(messageStatuses).where(and3(inArray3(messageStatuses.messageId, ids), eq4(messageStatuses.userId, partnerId))) : [];
+    const statusByMessage = new Map(statuses.map((item) => [item.messageId, item.status]));
+    return {
+      messages: entries.reverse().map((message) => ({ ...message, receiptStatus: statusByMessage.get(message.id) ?? "sent" })),
+      nextCursor: entries.length === 40 ? entries[entries.length - 1]?.createdAt : null
+    };
+  }),
+  send: protectedProcedure.input(z4.object({
+    conversationId: z4.number().int().positive(),
+    content: z4.string().max(5e3).optional(),
+    replyToId: z4.number().int().positive().optional(),
+    media: mediaInput.optional()
+  })).mutation(async ({ ctx, input }) => {
+    const db = await assertMember(input.conversationId, ctx.user.id);
+    const text2 = input.content?.trim() || null;
+    if (!text2 && !input.media) throw new TRPCError5({ code: "BAD_REQUEST", message: "Escreva uma mensagem ou adicione uma m\xEDdia." });
+    const recipients = await recipientIds(input.conversationId, ctx.user.id);
+    if (input.replyToId) {
+      const reply = await db.select({ id: messages.id }).from(messages).where(and3(eq4(messages.id, input.replyToId), eq4(messages.conversationId, input.conversationId))).limit(1);
+      if (!reply[0]) throw new TRPCError5({ code: "BAD_REQUEST", message: "A mensagem respondida n\xE3o pertence a esta conversa." });
+    }
+    const uploaded = input.media ? await storeMedia({ userId: ctx.user.id, dataUrl: input.media.dataUrl, originalName: input.media.name, kind: input.media.kind }) : null;
+    const inserted = await db.insert(messages).values({
+      conversationId: input.conversationId,
+      senderId: ctx.user.id,
+      messageType: input.media?.kind === "image" ? "image" : input.media?.kind === "audio" ? "audio" : input.media?.kind === "file" ? "file" : "text",
+      content: text2,
+      fileKey: uploaded?.key,
+      fileUrl: uploaded?.url,
+      fileName: uploaded?.fileName,
+      fileSize: uploaded?.fileSize,
+      mimeType: uploaded?.mimeType,
+      duration: input.media?.duration,
+      replyToId: input.replyToId
+    });
+    const messageId = Number(inserted[0].insertId);
+    await db.insert(messageStatuses).values(recipients.map((userId) => ({ messageId, userId, status: "sent" })));
+    await db.update(conversations).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq4(conversations.id, input.conversationId));
+    publishRealtime([ctx.user.id, ...recipients], { type: "message", conversationId: input.conversationId });
+    return { messageId, createdAt: /* @__PURE__ */ new Date() };
+  }),
+  acknowledge: protectedProcedure.input(z4.object({ conversationId: z4.number().int().positive(), read: z4.boolean().default(true) })).mutation(async ({ ctx, input }) => {
+    const db = await assertMember(input.conversationId, ctx.user.id);
+    const incoming = await db.select({ id: messages.id }).from(messages).where(and3(eq4(messages.conversationId, input.conversationId), ne3(messages.senderId, ctx.user.id), isNull(messages.deletedAt)));
+    if (incoming.length) {
+      await db.update(messageStatuses).set({ status: input.read ? "read" : "delivered", timestamp: /* @__PURE__ */ new Date() }).where(and3(inArray3(messageStatuses.messageId, incoming.map((item) => item.id)), eq4(messageStatuses.userId, ctx.user.id)));
+    }
+    if (input.read) await db.update(conversationMembers).set({ lastReadAt: /* @__PURE__ */ new Date() }).where(and3(eq4(conversationMembers.conversationId, input.conversationId), eq4(conversationMembers.userId, ctx.user.id)));
+    return { success: true };
+  }),
+  setTyping: protectedProcedure.input(z4.object({ conversationId: z4.number().int().positive(), active: z4.boolean() })).mutation(async ({ ctx, input }) => {
+    const db = await assertMember(input.conversationId, ctx.user.id);
+    if (!input.active) {
+      await db.delete(typingStates).where(and3(eq4(typingStates.conversationId, input.conversationId), eq4(typingStates.userId, ctx.user.id)));
+      return { active: false };
+    }
+    const expiresAt = new Date(Date.now() + 5e3);
+    await db.insert(typingStates).values({ conversationId: input.conversationId, userId: ctx.user.id, expiresAt }).onDuplicateKeyUpdate({ set: { expiresAt, updatedAt: /* @__PURE__ */ new Date() } });
+    return { active: true, expiresAt };
+  }),
+  typing: protectedProcedure.input(z4.object({ conversationId: z4.number().int().positive() })).query(async ({ ctx, input }) => {
+    const db = await assertMember(input.conversationId, ctx.user.id);
+    return db.select({ userId: users.id, name: users.name, expiresAt: typingStates.expiresAt }).from(typingStates).innerJoin(users, eq4(typingStates.userId, users.id)).where(and3(eq4(typingStates.conversationId, input.conversationId), ne3(typingStates.userId, ctx.user.id), gt2(typingStates.expiresAt, /* @__PURE__ */ new Date())));
+  }),
+  deleteForMe: protectedProcedure.input(z4.object({ messageId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    const message = await db.select({ conversationId: messages.conversationId }).from(messages).where(eq4(messages.id, input.messageId)).limit(1);
+    if (!message[0]) throw new TRPCError5({ code: "NOT_FOUND" });
+    await assertMember(message[0].conversationId, ctx.user.id);
+    await db.insert(messageDeletions).values({ messageId: input.messageId, userId: ctx.user.id }).onDuplicateKeyUpdate({ set: { deletedAt: /* @__PURE__ */ new Date() } });
+    return { success: true };
+  }),
+  deleteForEveryone: protectedProcedure.input(z4.object({ messageId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    const message = await db.select({ senderId: messages.senderId, createdAt: messages.createdAt }).from(messages).where(eq4(messages.id, input.messageId)).limit(1);
+    if (!message[0]) throw new TRPCError5({ code: "NOT_FOUND" });
+    if (message[0].senderId !== ctx.user.id) throw new TRPCError5({ code: "FORBIDDEN", message: "Apenas quem enviou pode apagar para todos." });
+    if (Date.now() - message[0].createdAt.getTime() > 24 * 60 * 60 * 1e3) throw new TRPCError5({ code: "BAD_REQUEST", message: "O prazo para apagar para todos expirou." });
+    await db.update(messages).set({ content: null, fileKey: null, fileUrl: null, fileName: null, fileSize: null, mimeType: null, duration: null, deletedAt: /* @__PURE__ */ new Date() }).where(eq4(messages.id, input.messageId));
+    return { success: true };
+  })
+});
+
+// server/routers/profile.ts
+import { and as and4, desc as desc3, eq as eq5, like, ne as ne4, or as or2 } from "drizzle-orm";
+import { TRPCError as TRPCError6 } from "@trpc/server";
+import { z as z5 } from "zod";
+var profileInput = z5.object({
+  name: z5.string().trim().min(2, "Informe um nome com pelo menos 2 caracteres.").max(120),
+  email: z5.string().trim().toLowerCase().email("Informe um e-mail v\xE1lido.").max(320),
+  status: z5.string().trim().max(280).optional()
+});
+function isOnline(lastSeen) {
+  return Date.now() - lastSeen.getTime() < 7e4;
+}
+var profileRouter = router({
+  me: protectedProcedure.query(async ({ ctx }) => {
+    const db = await requireDatabase();
+    const result = await db.select().from(users).where(eq5(users.id, ctx.user.id)).limit(1);
+    const profile = result[0];
+    if (!profile) throw new TRPCError6({ code: "NOT_FOUND" });
+    return { ...profile, online: isOnline(profile.lastSeen), isComplete: Boolean(profile.name && profile.email) };
+  }),
+  update: protectedProcedure.input(profileInput).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    try {
+      await db.update(users).set({ ...input, lastSeen: /* @__PURE__ */ new Date() }).where(eq5(users.id, ctx.user.id));
+    } catch (error) {
+      const message = error instanceof Error && /duplicate|unique/i.test(error.message) ? "Este e-mail j\xE1 est\xE1 em uso." : "N\xE3o foi poss\xEDvel salvar o perfil.";
+      throw new TRPCError6({ code: "CONFLICT", message });
+    }
+    return { success: true };
+  }),
+  updateAvatar: protectedProcedure.input(z5.object({ dataUrl: z5.string().max(12e6), name: z5.string().max(120).optional() })).mutation(async ({ ctx, input }) => {
+    const uploaded = await storeMedia({ userId: ctx.user.id, dataUrl: input.dataUrl, originalName: input.name, kind: "avatar" });
+    const db = await requireDatabase();
+    await db.update(users).set({ avatarKey: uploaded.key, avatarUrl: uploaded.url, lastSeen: /* @__PURE__ */ new Date() }).where(eq5(users.id, ctx.user.id));
+    return uploaded;
+  }),
+  removeAvatar: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = await requireDatabase();
+    await db.update(users).set({ avatarKey: null, avatarUrl: null }).where(eq5(users.id, ctx.user.id));
+    return { success: true };
+  }),
+  heartbeat: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = await requireDatabase();
+    await db.update(users).set({ lastSeen: /* @__PURE__ */ new Date() }).where(eq5(users.id, ctx.user.id));
+    return { success: true };
+  }),
+  search: protectedProcedure.input(z5.object({ query: z5.string().trim().min(1).max(120) })).query(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    const term = `%${input.query.replace(/[%_\\]/g, "\\$&")}%`;
+    const results = await db.select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(users).where(and4(ne4(users.id, ctx.user.id), or2(like(users.name, term), like(users.email, term)))).orderBy(desc3(users.lastSeen)).limit(20);
+    return results.map((user) => ({ ...user, online: isOnline(user.lastSeen) }));
+  })
+});
+
 // server/routers.ts
 var appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
-    // Cadastro ou Login Simples de Família (apenas nome e email)
-    loginSimple: publicProcedure.input(
-      z2.object({
-        name: z2.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-        email: z2.string().email("Email inv\xE1lido"),
-        statusMessage: z2.string().optional(),
-        avatarUrl: z2.string().optional()
-      })
-    ).mutation(async ({ ctx, input }) => {
-      const email = input.email.trim().toLowerCase();
-      const name = input.name.trim();
-      let user = await getUserByEmail(email);
-      if (!user) {
-        const openId = `family_${Buffer.from(email).toString("hex").slice(0, 32)}`;
-        await upsertUser({
-          openId,
-          name,
-          email,
-          statusMessage: input.statusMessage || "Oi fam\xEDlia, estou usando o CasaChat!",
-          avatarUrl: input.avatarUrl || null,
-          loginMethod: "family_simple",
-          lastSignedIn: /* @__PURE__ */ new Date()
-        });
-        user = await getUserByEmail(email);
-      } else {
-        await upsertUser({
-          openId: user.openId,
-          name: name || user.name || "Membro da Fam\xEDlia",
-          email: user.email,
-          statusMessage: input.statusMessage || user.statusMessage || "Oi fam\xEDlia, estou usando o CasaChat!",
-          avatarUrl: input.avatarUrl || user.avatarUrl,
-          lastSignedIn: /* @__PURE__ */ new Date()
-        });
-        user = await getUserByEmail(email);
-      }
-      if (!user) {
-        throw new TRPCError3({ code: "INTERNAL_SERVER_ERROR", message: "N\xE3o foi poss\xEDvel autenticar o usu\xE1rio" });
-      }
-      try {
-        await ensureUserInFamilyGroup(user.id);
-      } catch (e) {
-        console.error("[Login] Failed to join family group:", e);
-      }
-      const sessionToken = await sdk.createSessionToken(user.openId, {
-        name: user.name || name
-      });
+    localLogin: publicProcedure.input(z6.object({ name: z6.string().trim().min(2).max(120), email: z6.string().trim().email().max(320), familyCode: z6.string().min(8).max(128) })).mutation(async ({ ctx, input }) => {
+      if (!validateFamilyCode(input.familyCode)) throw new TRPCError7({ code: "UNAUTHORIZED", message: "C\xF3digo privado da fam\xEDlia inv\xE1lido." });
+      const user = await upsertLocalUser({ name: input.name, email: input.email });
+      const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.cookie(COOKIE_NAME, sessionToken, {
-        ...cookieOptions,
-        maxAge: 365 * 24 * 60 * 60 * 1e3
-        // 1 ano
-      });
-      return {
-        user,
-        token: sessionToken
-      };
-    }),
-    // Atualizar perfil do usuário conectado
-    updateProfile: protectedProcedure.input(
-      z2.object({
-        name: z2.string().min(2).optional(),
-        statusMessage: z2.string().max(250).optional(),
-        avatarUrl: z2.string().optional()
-      })
-    ).mutation(async ({ ctx, input }) => {
-      await updateProfile(ctx.user.id, input);
-      return getUserById(ctx.user.id);
+      ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      return user;
     }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return {
-        success: true
-      };
-    })
-  }),
-  // Usuários da Família
-  users: router({
-    list: protectedProcedure.query(async ({ ctx }) => {
-      const all = await listAllUsers();
-      return all.map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        avatarUrl: u.avatarUrl,
-        statusMessage: u.statusMessage,
-        isSelf: u.id === ctx.user.id
-      }));
-    })
-  }),
-  // Conversas
-  conversations: router({
-    // Listar conversas do usuário logado
-    list: protectedProcedure.query(async ({ ctx }) => {
-      try {
-        await ensureUserInFamilyGroup(ctx.user.id);
-      } catch (e) {
-        console.error("[Conversations] Failed to ensure family group:", e);
-      }
-      return listUserConversations(ctx.user.id);
-    }),
-    // Obter detalhes de uma conversa
-    get: protectedProcedure.input(z2.object({ conversationId: z2.number() })).query(async ({ ctx, input }) => {
-      const conv = await getConversationDetails(input.conversationId, ctx.user.id);
-      if (!conv) {
-        throw new TRPCError3({ code: "NOT_FOUND", message: "Conversa n\xE3o encontrada ou acesso n\xE3o autorizado" });
-      }
-      return conv;
-    }),
-    // Criar conversa direta (ou abrir existente)
-    startDirect: protectedProcedure.input(z2.object({ targetUserId: z2.number() })).mutation(async ({ ctx, input }) => {
-      if (input.targetUserId === ctx.user.id) {
-        throw new TRPCError3({ code: "BAD_REQUEST", message: "Voc\xEA j\xE1 est\xE1 em contato consigo mesmo" });
-      }
-      const existingId = await findDirectConversation(ctx.user.id, input.targetUserId);
-      if (existingId) {
-        return { conversationId: existingId, isNew: false };
-      }
-      const target = await getUserById(input.targetUserId);
-      if (!target) {
-        throw new TRPCError3({ code: "NOT_FOUND", message: "Usu\xE1rio alvo n\xE3o encontrado" });
-      }
-      const newId = await createConversation({
-        type: "direct",
-        createdById: ctx.user.id,
-        memberUserIds: [input.targetUserId]
-      });
-      return { conversationId: newId, isNew: true };
-    }),
-    // Criar Grupo familiar
-    createGroup: protectedProcedure.input(
-      z2.object({
-        name: z2.string().min(2, "Nome do grupo deve ter pelo menos 2 caracteres"),
-        description: z2.string().optional(),
-        memberUserIds: z2.array(z2.number()).min(1, "Adicione pelo menos 1 membro"),
-        avatarUrl: z2.string().optional()
-      })
-    ).mutation(async ({ ctx, input }) => {
-      const conversationId = await createConversation({
-        type: "group",
-        name: input.name,
-        description: input.description,
-        avatarUrl: input.avatarUrl,
-        createdById: ctx.user.id,
-        memberUserIds: input.memberUserIds
-      });
-      return { conversationId };
-    }),
-    // Marcar conversa como lida
-    markAsRead: protectedProcedure.input(z2.object({ conversationId: z2.number() })).mutation(async ({ ctx, input }) => {
-      await markConversationAsRead(input.conversationId, ctx.user.id);
-      return { success: true };
-    }),
-    // Adicionar membro ao grupo
-    addMember: protectedProcedure.input(z2.object({ conversationId: z2.number(), targetUserId: z2.number() })).mutation(async ({ ctx, input }) => {
-      const conv = await getConversationDetails(input.conversationId, ctx.user.id);
-      if (!conv) {
-        throw new TRPCError3({ code: "FORBIDDEN", message: "Apenas membros podem adicionar participantes" });
-      }
-      const targetUser = await getUserById(input.targetUserId);
-      if (!targetUser) {
-        throw new TRPCError3({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o encontrado" });
-      }
-      await addMemberToConversation(input.conversationId, input.targetUserId);
-      await sendMessage({
-        conversationId: input.conversationId,
-        senderId: ctx.user.id,
-        content: `\u{1F44B} ${targetUser.name || "Novo membro"} entrou no grupo`
-      });
-      return { success: true };
-    }),
-    // Remover membro do grupo (ou sair do grupo)
-    removeMember: protectedProcedure.input(z2.object({ conversationId: z2.number(), targetUserId: z2.number() })).mutation(async ({ ctx, input }) => {
-      const conv = await getConversationDetails(input.conversationId, ctx.user.id);
-      if (!conv) {
-        throw new TRPCError3({ code: "FORBIDDEN", message: "Acesso n\xE3o autorizado a esta conversa" });
-      }
-      const targetUser = await getUserById(input.targetUserId);
-      if (!targetUser) {
-        throw new TRPCError3({ code: "NOT_FOUND", message: "Usu\xE1rio n\xE3o encontrado" });
-      }
-      await removeMemberFromConversation(input.conversationId, input.targetUserId);
-      const isSelf = input.targetUserId === ctx.user.id;
-      const notice = isSelf ? `\u{1F6AA} ${targetUser.name || "Um membro"} saiu do grupo` : `\u{1F6AA} ${targetUser.name || "Um membro"} foi removido(a) do grupo por ${ctx.user.name || "um participante"}`;
-      await sendMessage({
-        conversationId: input.conversationId,
-        senderId: ctx.user.id,
-        content: notice
-      });
       return { success: true };
     })
   }),
-  // Mensagens
-  messages: router({
-    list: protectedProcedure.input(z2.object({ conversationId: z2.number(), limit: z2.number().optional() })).query(async ({ ctx, input }) => {
-      const conv = await getConversationDetails(input.conversationId, ctx.user.id);
-      if (!conv) {
-        throw new TRPCError3({ code: "FORBIDDEN", message: "Sem acesso a esta conversa" });
-      }
-      return listConversationMessages(input.conversationId, input.limit ?? 100);
-    }),
-    send: protectedProcedure.input(
-      z2.object({
-        conversationId: z2.number(),
-        content: z2.string().optional(),
-        mediaUrl: z2.string().optional(),
-        mediaType: z2.string().optional(),
-        fileName: z2.string().optional()
-      })
-    ).mutation(async ({ ctx, input }) => {
-      if (!input.content && !input.mediaUrl) {
-        throw new TRPCError3({ code: "BAD_REQUEST", message: "Mensagem n\xE3o pode ser vazia" });
-      }
-      const conv = await getConversationDetails(input.conversationId, ctx.user.id);
-      if (!conv) {
-        throw new TRPCError3({ code: "FORBIDDEN", message: "Sem acesso a esta conversa" });
-      }
-      const messageId = await sendMessage({
-        conversationId: input.conversationId,
-        senderId: ctx.user.id,
-        content: input.content,
-        mediaUrl: input.mediaUrl,
-        mediaType: input.mediaType,
-        fileName: input.fileName
-      });
-      return { messageId, success: true };
-    }),
-    react: protectedProcedure.input(z2.object({ messageId: z2.number(), emoji: z2.string().min(1) })).mutation(async ({ ctx, input }) => {
-      await toggleMessageReaction({
-        messageId: input.messageId,
-        userId: ctx.user.id,
-        emoji: input.emoji
-      });
-      return { success: true };
-    }),
-    // Upload de arquivo ou foto base64 (Salva localmente com alta performance)
-    uploadMedia: protectedProcedure.input(
-      z2.object({
-        fileName: z2.string(),
-        contentType: z2.string(),
-        base64Data: z2.string()
-        // payload base64 enviado pelo cliente
-      })
-    ).mutation(async ({ input }) => {
-      const buffer = Buffer.from(input.base64Data, "base64");
-      const safeName = input.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
-      const uniqueName = `${Date.now()}_${safeName}`;
-      try {
-        const uploadsDir = path.resolve(process.cwd(), "uploads");
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-        const filePath = path.join(uploadsDir, uniqueName);
-        await fs.promises.writeFile(filePath, buffer);
-        return {
-          url: `/uploads/${uniqueName}`,
-          key: uniqueName
-        };
-      } catch (localErr) {
-        console.error("Erro no salvamento local, tentando storage:", localErr);
-        const relKey = `chat-media/${uniqueName}`;
-        const result = await storagePut(relKey, buffer, input.contentType);
-        return {
-          url: result.url,
-          key: result.key
-        };
-      }
-    })
-  }),
-  // Módulo de Chamadas de Áudio e Vídeo (WebRTC Signaling com persistência no MySQL)
-  calls: router({
-    initiate: protectedProcedure.input(
-      z2.object({
-        conversationId: z2.number(),
-        type: z2.enum(["audio", "video"]),
-        offer: z2.any().optional()
-      })
-    ).mutation(async ({ ctx, input }) => {
-      const callId = `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      const database = await getDb();
-      if (database) {
-        await database.execute(sql2`
-            INSERT INTO calls (id, conversationId, callerId, callerName, callerAvatar, type, status, offer, candidates)
-            VALUES (
-              ${callId},
-              ${input.conversationId},
-              ${ctx.user.id},
-              ${ctx.user.name || "Familiar"},
-              ${ctx.user.avatarUrl || null},
-              ${input.type},
-              'ringing',
-              ${input.offer ? JSON.stringify(input.offer) : null},
-              '[]'
-            )
-          `);
-      }
-      return {
-        callId,
-        session: {
-          id: callId,
-          conversationId: input.conversationId,
-          callerId: ctx.user.id,
-          callerName: ctx.user.name || "Familiar",
-          callerAvatar: ctx.user.avatarUrl,
-          type: input.type,
-          status: "ringing",
-          offer: input.offer,
-          candidates: [],
-          startedAt: Date.now(),
-          updatedAt: Date.now()
-        }
-      };
-    }),
-    poll: protectedProcedure.input(z2.object({ conversationId: z2.number() })).query(async ({ ctx, input }) => {
-      const database = await getDb();
-      if (!database) return null;
-      const [rows] = await database.execute(sql2`
-          SELECT * FROM calls
-          WHERE conversationId = ${input.conversationId}
-            AND status IN ('ringing', 'connected')
-            AND updatedAt >= NOW() - INTERVAL 2 MINUTE
-          ORDER BY updatedAt DESC
-          LIMIT 1
-        `);
-      const list = rows;
-      if (!list || list.length === 0) return null;
-      const row = list[0];
-      let offer = null;
-      let answer = null;
-      let candidates = [];
-      try {
-        if (row.offer) offer = JSON.parse(row.offer);
-      } catch {
-      }
-      try {
-        if (row.answer) answer = JSON.parse(row.answer);
-      } catch {
-      }
-      try {
-        if (row.candidates) candidates = JSON.parse(row.candidates);
-      } catch {
-      }
-      return {
-        id: row.id,
-        conversationId: row.conversationId,
-        callerId: row.callerId,
-        callerName: row.callerName,
-        callerAvatar: row.callerAvatar,
-        type: row.type,
-        status: row.status,
-        offer,
-        answer,
-        candidates,
-        startedAt: new Date(row.startedAt).getTime(),
-        updatedAt: new Date(row.updatedAt).getTime()
-      };
-    }),
-    answer: protectedProcedure.input(
-      z2.object({
-        callId: z2.string(),
-        answer: z2.any()
-      })
-    ).mutation(async ({ input }) => {
-      const database = await getDb();
-      if (database) {
-        await database.execute(sql2`
-            UPDATE calls
-            SET status = 'connected',
-                answer = ${JSON.stringify(input.answer)},
-                updatedAt = CURRENT_TIMESTAMP
-            WHERE id = ${input.callId}
-          `);
-      }
-      return { success: true };
-    }),
-    addCandidate: protectedProcedure.input(
-      z2.object({
-        callId: z2.string(),
-        candidate: z2.any()
-      })
-    ).mutation(async ({ ctx, input }) => {
-      const database = await getDb();
-      if (database) {
-        const [rows] = await database.execute(sql2`
-            SELECT candidates FROM calls WHERE id = ${input.callId} LIMIT 1
-          `);
-        const list = rows;
-        if (list && list.length > 0) {
-          let candidates = [];
-          try {
-            if (list[0].candidates) candidates = JSON.parse(list[0].candidates);
-          } catch {
-          }
-          candidates.push({ candidate: input.candidate, senderId: ctx.user.id });
-          await database.execute(sql2`
-              UPDATE calls
-              SET candidates = ${JSON.stringify(candidates)},
-                  updatedAt = CURRENT_TIMESTAMP
-              WHERE id = ${input.callId}
-            `);
-        }
-      }
-      return { success: true };
-    }),
-    getCandidates: protectedProcedure.input(z2.object({ callId: z2.string() })).query(async ({ ctx, input }) => {
-      const database = await getDb();
-      if (!database) return [];
-      const [rows] = await database.execute(sql2`
-          SELECT candidates FROM calls WHERE id = ${input.callId} LIMIT 1
-        `);
-      const list = rows;
-      if (!list || list.length === 0) return [];
-      let candidates = [];
-      try {
-        if (list[0].candidates) candidates = JSON.parse(list[0].candidates);
-      } catch {
-      }
-      return candidates.filter((c) => c.senderId !== ctx.user.id);
-    }),
-    end: protectedProcedure.input(
-      z2.object({
-        callId: z2.string(),
-        status: z2.enum(["ended", "rejected"]).optional()
-      })
-    ).mutation(async ({ input }) => {
-      const database = await getDb();
-      if (database) {
-        await database.execute(sql2`
-            UPDATE calls
-            SET status = ${input.status || "ended"},
-                updatedAt = CURRENT_TIMESTAMP
-            WHERE id = ${input.callId}
-          `);
-      }
-      return { success: true };
-    })
-  })
+  profile: profileRouter,
+  groups: groupsRouter,
+  messaging: messagingRouter,
+  calls: callsRouter
 });
 
 // server/_core/context.ts
@@ -1479,6 +1321,60 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
+app.get("/api/calls/ice", async (req, res) => {
+  try {
+    const user = await sdk.authenticateRequest(req);
+    const sharedSecret = process.env.TURN_SHARED_SECRET;
+    const turnServer = process.env.TURN_SERVER;
+    if (!sharedSecret || !turnServer) {
+      res.json({ servers: [{ urls: process.env.STUN_SERVER || "stun:stun.l.google.com:19302" }] });
+      return;
+    }
+    const ttl = Math.min(Math.max(Number(process.env.TURN_CREDENTIAL_TTL || 3600), 300), 86400);
+    const expires = Math.floor(Date.now() / 1e3) + ttl;
+    const username = `${expires}:${user.id}`;
+    const credential = crypto4.createHmac("sha1", sharedSecret).update(username).digest("base64");
+    res.json({
+      servers: [
+        { urls: process.env.STUN_SERVER || "stun:stun.l.google.com:19302" },
+        { urls: turnServer, username, credential }
+      ],
+      expiresAt: expires * 1e3
+    });
+  } catch {
+    res.status(401).json({ error: "unauthorized" });
+  }
+});
+app.get("/api/realtime", async (req, res) => {
+  try {
+    const user = await sdk.authenticateRequest(req);
+    res.status(200).set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
+    });
+    res.flushHeaders();
+    res.write(`data: ${JSON.stringify({ type: "connected", at: Date.now() })}
+
+`);
+    const unsubscribe = subscribeRealtime(
+      user.id,
+      (event) => res.write(`data: ${JSON.stringify(event)}
+
+`)
+    );
+    const heartbeat = setInterval(() => res.write(`: heartbeat ${Date.now()}
+
+`), 15e3);
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+  } catch {
+    res.status(401).json({ error: "unauthorized" });
+  }
+});
 app.use(
   "/api/trpc",
   createExpressMiddleware({

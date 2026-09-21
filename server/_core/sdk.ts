@@ -170,8 +170,8 @@ class SDKServer {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId || "casachat_family",
-        name: options.name || "Membro da Família",
+        appId: ENV.appId,
+        name: options.name || "",
       },
       options
     );
@@ -188,8 +188,8 @@ class SDKServer {
 
     return new SignJWT({
       openId: payload.openId,
-      appId: payload.appId || "casachat_family",
-      name: payload.name || "Membro da Família",
+      appId: payload.appId,
+      name: payload.name,
     })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .setExpirationTime(expirationSeconds)
@@ -211,15 +211,19 @@ class SDKServer {
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
-      if (!isNonEmptyString(openId)) {
-        console.warn("[Auth] Session payload missing required openId");
+      if (
+        !isNonEmptyString(openId) ||
+        !isNonEmptyString(appId) ||
+        !isNonEmptyString(name)
+      ) {
+        console.warn("[Auth] Session payload missing required fields");
         return null;
       }
 
       return {
         openId,
-        appId: isNonEmptyString(appId) ? appId : (ENV.appId || "casachat_family"),
-        name: isNonEmptyString(name) ? name : "Membro da Família",
+        appId,
+        name,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));

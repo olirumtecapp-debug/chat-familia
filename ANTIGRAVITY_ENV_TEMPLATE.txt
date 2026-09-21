@@ -1,0 +1,18 @@
+ChatForAll — variáveis para configurar no Antigravity
+
+DATABASE_URL=mysql://usuario:senha@host:3306/chatforall
+JWT_SECRET=<segredo-longo-e-aleatorio>
+CHATFORALL_FAMILY_CODE=<codigo-privado-com-8-ou-mais-caracteres>
+BUILT_IN_FORGE_API_URL=<endpoint-do-storage>
+BUILT_IN_FORGE_API_KEY=<segredo-do-storage>
+
+# Opcional para chamadas WebRTC
+VITE_TURN_SERVER=<turns:turn.exemplo.com:5349>
+VITE_TURN_USERNAME=<usuario-ou-credencial-efemera>
+VITE_TURN_PASSWORD=<senha-ou-credencial-efemera>
+TURN_SHARED_SECRET=<segredo-compartilhado-do-turn>
+
+NODE_ENV=production
+PORT=3000
+
+Não copie valores reais para o Git. Cadastre cada valor como variável/secret no ambiente do Antigravity.
