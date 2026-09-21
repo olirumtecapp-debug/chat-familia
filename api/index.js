@@ -383,8 +383,8 @@ var SDKServer = class {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId,
-        name: options.name || ""
+        appId: ENV.appId || "chatforall",
+        name: options.name || "Usu\xE1rio"
       },
       options
     );
@@ -396,8 +396,8 @@ var SDKServer = class {
     const secretKey = this.getSessionSecret();
     return new SignJWT({
       openId: payload.openId,
-      appId: payload.appId,
-      name: payload.name
+      appId: payload.appId || "chatforall",
+      name: payload.name || "Usu\xE1rio"
     }).setProtectedHeader({ alg: "HS256", typ: "JWT" }).setExpirationTime(expirationSeconds).sign(secretKey);
   }
   async verifySession(cookieValue) {
@@ -411,14 +411,14 @@ var SDKServer = class {
         algorithms: ["HS256"]
       });
       const { openId, appId, name } = payload;
-      if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
-        console.warn("[Auth] Session payload missing required fields");
+      if (!isNonEmptyString(openId)) {
+        console.warn("[Auth] Session payload missing openId");
         return null;
       }
       return {
-        openId,
-        appId,
-        name
+        openId: String(openId),
+        appId: typeof appId === "string" && appId ? appId : "chatforall",
+        name: typeof name === "string" ? name : "Usu\xE1rio"
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
