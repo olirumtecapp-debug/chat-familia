@@ -1077,21 +1077,17 @@ var messagingRouter = router({
     const other = await db.select({ id: users.id }).from(users).where(eq4(users.id, input.userId)).limit(1);
     if (!other[0]) throw new TRPCError5({ code: "NOT_FOUND", message: "Pessoa n\xE3o encontrada." });
     const directKey = [ctx.user.id, input.userId].sort((a, b) => a - b).join(":");
-    const existing = await db.select({ id: conversations.id }).from(conversations).where(eq4(conversations.directKey, directKey)).limit(1);
-    if (existing[0]) return { conversationId: existing[0].id, created: false };
-    try {
-      const created = await db.insert(conversations).values({ type: "direct", directKey });
-      const conversationId = Number(created[0].insertId);
-      await db.insert(conversationMembers).values([
-        { conversationId, userId: ctx.user.id, lastReadAt: /* @__PURE__ */ new Date() },
-        { conversationId, userId: input.userId }
-      ]);
-      return { conversationId, created: true };
-    } catch (error) {
-      const concurrent = await db.select({ id: conversations.id }).from(conversations).where(eq4(conversations.directKey, directKey)).limit(1);
-      if (concurrent[0]) return { conversationId: concurrent[0].id, created: false };
-      throw error;
-    }
+    // Upsert atômico — evita falha no TiDB com conexões instáveis
+    await db.insert(conversations).values({ type: "direct", directKey })
+      .onDuplicateKeyUpdate({ set: { type: "direct" } });
+    const conv = await db.select({ id: conversations.id }).from(conversations).where(eq4(conversations.directKey, directKey)).limit(1);
+    if (!conv[0]) throw new TRPCError5({ code: "INTERNAL_SERVER_ERROR", message: "Erro ao criar conversa." });
+    const conversationId = conv[0].id;
+    await db.insert(conversationMembers).values([
+      { conversationId, userId: ctx.user.id, lastReadAt: /* @__PURE__ */ new Date() },
+      { conversationId, userId: input.userId }
+    ]).onDuplicateKeyUpdate({ set: { joinedAt: conversationMembers.joinedAt } });
+    return { conversationId, created: true };
   }),
   list: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDatabase();
