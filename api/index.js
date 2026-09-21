@@ -753,10 +753,11 @@ var systemRouter = router({
 // server/localAuth.ts
 import crypto3 from "crypto";
 function validateFamilyCode(candidate) {
-  const configured = process.env.CHATFORALL_FAMILY_CODE || "";
-  if (!configured || !candidate) return false;
+  const configured = (process.env.CHATFORALL_FAMILY_CODE || "").trim();
+  const clean = (candidate || "").trim();
+  if (!configured || !clean) return false;
   const expected = Buffer.from(configured, "utf8");
-  const actual = Buffer.from(candidate, "utf8");
+  const actual = Buffer.from(clean, "utf8");
   return expected.length === actual.length && crypto3.timingSafeEqual(expected, actual);
 }
 
@@ -1281,7 +1282,7 @@ var appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
-    localLogin: publicProcedure.input(z6.object({ name: z6.string().trim().min(2).max(120), email: z6.string().trim().email().max(320), familyCode: z6.string().min(8).max(128) })).mutation(async ({ ctx, input }) => {
+    localLogin: publicProcedure.input(z6.object({ name: z6.string().trim().min(2).max(120), email: z6.string().trim().email().max(320), familyCode: z6.string().trim().min(8).max(128) })).mutation(async ({ ctx, input }) => {
       if (!validateFamilyCode(input.familyCode)) throw new TRPCError7({ code: "UNAUTHORIZED", message: "C\xF3digo privado da fam\xEDlia inv\xE1lido." });
       const user = await upsertLocalUser({ name: input.name, email: input.email });
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });

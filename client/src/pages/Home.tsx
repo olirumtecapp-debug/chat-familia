@@ -100,12 +100,9 @@ function Welcome() {
       if (data?.user) {
         utils.auth.me.setData(undefined, data.user);
       }
-      await utils.auth.me.invalidate();
-      await utils.profile.me.invalidate();
-      toast.success("Acesso liberado.");
-      setTimeout(() => {
-        window.location.reload();
-      }, 300);
+      await utils.auth.me.refetch();
+      await utils.profile.me.refetch();
+      toast.success("Acesso liberado! Entrando no ChatForAll...");
     },
     onError: error => toast.error(error.message)
   });
@@ -117,7 +114,16 @@ function Welcome() {
       <p className="eyebrow">Comunicação privada, sem ruído</p>
       <h1>Todos próximos.<br /><em>Onde importa.</em></h1>
       <p className="auth-copy">ChatForAll mantém as conversas da sua família em um espaço leve, privado e direto.</p>
-      <form className="local-login-form" onSubmit={event => { event.preventDefault(); login.mutate({ name, email, familyCode }); }}>
+      <form className="local-login-form" onSubmit={event => {
+        event.preventDefault();
+        const cleanName = name.trim();
+        const cleanEmail = email.trim();
+        const cleanCode = familyCode.trim();
+        if (!cleanName) return toast.error("Informe seu nome.");
+        if (!cleanEmail) return toast.error("Informe seu e-mail.");
+        if (!cleanCode) return toast.error("Informe o código privado da família.");
+        login.mutate({ name: cleanName, email: cleanEmail, familyCode: cleanCode });
+      }}>
         <Input value={name} onChange={event => setName(event.target.value)} placeholder="Seu nome" autoComplete="name" />
         <Input value={email} onChange={event => setEmail(event.target.value)} placeholder="Seu e-mail" type="email" autoComplete="email" />
         <Input value={familyCode} onChange={event => setFamilyCode(event.target.value)} placeholder="Código privado da família" type="password" autoComplete="one-time-code" />

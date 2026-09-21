@@ -17,7 +17,7 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    localLogin: publicProcedure.input(z.object({ name: z.string().trim().min(2).max(120), email: z.string().trim().email().max(320), familyCode: z.string().min(8).max(128) })).mutation(async ({ ctx, input }) => {
+    localLogin: publicProcedure.input(z.object({ name: z.string().trim().min(2).max(120), email: z.string().trim().email().max(320), familyCode: z.string().trim().min(8).max(128) })).mutation(async ({ ctx, input }) => {
       if (!validateFamilyCode(input.familyCode)) throw new TRPCError({ code: "UNAUTHORIZED", message: "Código privado da família inválido." });
       const user = await db.upsertLocalUser({ name: input.name, email: input.email });
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
