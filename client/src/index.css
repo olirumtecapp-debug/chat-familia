@@ -12,3 +12,7 @@
 .group-member-list{display:grid;gap:4px;max-height:280px;overflow:auto;border-top:1px solid var(--line);padding-top:10px}.group-member{display:flex;align-items:center;gap:10px;padding:7px 0}.group-member>span{display:grid;gap:2px;flex:1}.group-member small{font-size:.72rem;color:var(--muted)}
 
 .auth-logo{width:min(210px,58vw);height:auto;object-fit:contain;margin:0 auto 12px;filter:drop-shadow(0 14px 24px rgba(18,87,164,.18))}.brand-logo{width:42px;height:42px;object-fit:contain;border-radius:12px}.local-login-form{display:grid;gap:10px;width:min(360px,100%);margin:22px auto 0}.local-login-form input{height:46px;border-radius:14px;background:rgba(255,255,255,.78);border:1px solid rgba(28,113,109,.16)}
+.install-pwa-banner{display:flex;align-items:center;justify-content:center;gap:10px;width:min(360px,100%);margin:14px auto 0;padding:12px 18px;border-radius:14px;background:var(--surface-soft);border:1px solid var(--line);color:var(--ink);font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s ease;box-shadow:0 2px 8px rgba(0,0,0,.03)}
+.install-pwa-banner:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-deep)}
+.sidebar-footer button.install-btn{color:var(--accent);font-weight:600}
+.sidebar-footer button.install-btn:hover{background:var(--accent-soft);color:var(--accent-deep)}

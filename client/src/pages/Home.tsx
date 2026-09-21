@@ -3,13 +3,15 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft, Bell, Camera, Check, CheckCheck, ChevronLeft, CircleUserRound, Copy, FileText, ImagePlus,
+  ArrowLeft, Bell, Camera, Check, CheckCheck, ChevronLeft, CircleUserRound, Copy, Download, FileText, ImagePlus,
   Info, Loader2, LogOut, Menu, MessageCircleMore, Mic, Moon, MoreHorizontal, Paperclip,
-  Phone, Plus, Search, SendHorizonal, Smile, Sun, Trash2, UserRoundPlus, Video, X,
+  Phone, Plus, Search, SendHorizonal, Smartphone, Smile, Sun, Trash2, UserRoundPlus, Video, X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CallDialog } from "@/components/CallDialog";
+import { InstallAppModal } from "@/components/InstallAppModal";
+import { usePwaInstall } from "@/hooks/usePwaInstall";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -85,6 +87,7 @@ function Receipt({ status }: { status?: "sent" | "delivered" | "read" }) {
 
 function Welcome() {
   const { loading } = useAuth();
+  const { installApp, showGuide, setShowGuide, isIOS, isInstalled } = usePwaInstall();
   const utils = trpc.useUtils();
   const login = trpc.auth.localLogin.useMutation({ onSuccess: async () => { await utils.auth.me.invalidate(); toast.success("Acesso liberado."); }, onError: error => toast.error(error.message) });
   const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [familyCode, setFamilyCode] = useState("");
@@ -103,8 +106,16 @@ function Welcome() {
           {loading || login.isPending ? <Loader2 className="animate-spin" /> : <MessageCircleMore />} Entrar no ChatForAll
         </Button>
       </form>
+      {!isInstalled && (
+        <button type="button" onClick={installApp} className="install-pwa-banner">
+          <Smartphone className="w-4 h-4 text-[var(--accent)]" />
+          <span>Instalar app / atalho no celular</span>
+          <Download className="w-4 h-4 text-[var(--accent)] ml-auto" />
+        </button>
+      )}
       <p className="auth-note">Use seu nome, e-mail e o código privado compartilhado pela família. Não há validação pelo Manus.</p>
     </section>
+    <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
   </main>;
 }
 
@@ -224,6 +235,7 @@ function MessageBubble({ message, currentUserId, onReply, onDeleteMe, onDeleteAl
 export default function Home() {
   const { user, loading, isAuthenticated, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { installApp, showGuide, setShowGuide, isIOS, isInstalled } = usePwaInstall();
   const utils = trpc.useUtils();
   const profile = trpc.profile.me.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 20_000 });
   const conversations = trpc.messaging.list.useQuery(undefined, { enabled: Boolean(profile.data?.isComplete), refetchInterval: 2_500 });
@@ -272,7 +284,12 @@ export default function Home() {
       <button className="account-card" onClick={() => setProfileOpen(true)}><Avatar name={profile.data.name} url={profile.data.avatarUrl} /><span><strong>{profile.data.name}</strong><small>{profile.data.status || "Disponível"}</small></span><MoreHorizontal /></button>
       <div className="sidebar-search"><Search /><Input placeholder="Pesquisar conversas" onChange={event => { const term = event.target.value.toLowerCase(); if (!term) return; const match = conversations.data?.find(item => item.participant?.name?.toLowerCase().includes(term)); if (match) setSelectedId(match.id); }} /></div>
       <div className="conversation-list">{conversations.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando conversas</div>}{!conversations.isLoading && !conversations.data?.length && <div className="clean-empty"><MessageCircleMore /><strong>Suas conversas começam aqui.</strong><span>Crie uma nova conversa para falar com alguém da família.</span><Button variant="outline" onClick={() => setNewChatOpen(true)}><UserRoundPlus /> Nova conversa</Button></div>}{conversations.data?.map(conversation => <button key={conversation.id} className={cn("conversation-row", selectedId === conversation.id && "active", conversation.unreadCount > 0 && "unread")} onClick={() => chooseConversation(conversation.id)}><Avatar name={conversation.participant?.name || conversation.title} url={conversation.participant?.avatarUrl} /><span className="conversation-copy"><span><strong>{conversation.participant?.name || conversation.title || "Conversa"}</strong><time>{formatTime(conversation.latestMessage?.createdAt)}</time></span><span><small>{conversation.latestMessage?.deletedAt ? "Mensagem apagada" : conversation.latestMessage?.messageType === "image" ? "Imagem" : conversation.latestMessage?.messageType === "audio" ? "Mensagem de voz" : conversation.latestMessage?.messageType === "file" ? "Documento" : conversation.latestMessage?.content || "Conversa iniciada"}</small>{conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}</span></span></button>)}</div>
-      <footer className="sidebar-footer"><button onClick={requestNotification}><Bell /> Notificações</button><button onClick={toggleTheme}>{theme === "dark" ? <Sun /> : <Moon />} {theme === "dark" ? "Modo claro" : "Modo escuro"}</button><button onClick={() => logout()}><LogOut /> Sair</button></footer>
+      <footer className="sidebar-footer">
+        {!isInstalled && <button className="install-btn" onClick={installApp} title="Instalar aplicativo"><Download /> Instalar</button>}
+        <button onClick={requestNotification}><Bell /> Notificações</button>
+        <button onClick={toggleTheme}>{theme === "dark" ? <Sun /> : <Moon />} {theme === "dark" ? "Modo claro" : "Modo escuro"}</button>
+        <button onClick={() => logout()}><LogOut /> Sair</button>
+      </footer>
     </aside>
 
     <main className={cn("chat-stage", !selected && "no-selection")}>{!selected ? <section className="stage-empty"><div className="stage-art"><MessageCircleMore /><span /><span /><span /></div><p className="eyebrow">ChatForAll</p><h2>Uma conversa de cada vez.</h2><p>Selecione uma conversa ou comece uma nova quando estiver pronto.</p><Button onClick={() => setNewChatOpen(true)}><Plus /> Nova conversa</Button></section> : <>
@@ -282,5 +299,6 @@ export default function Home() {
     </>}</main>
     <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />
     <CallDialog call={pendingCall.data && ["ringing", "connecting", "active"].includes(pendingCall.data.status) ? pendingCall.data as any : null} currentUserId={user?.id} onFinished={() => pendingCall.refetch()} />
+    <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
   </div>;
 }
