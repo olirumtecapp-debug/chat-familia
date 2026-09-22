@@ -1378,6 +1378,38 @@ app.get("/api/realtime", async (req, res) => {
     res.status(401).json({ error: "unauthorized" });
   }
 });
+app.get(["/manus-storage/*", "/api/storage/*", "/api/manus-storage/*"], async (req, res) => {
+  const rawKey = req.params[0] || "";
+  const key = rawKey.replace(/^\/+/, "");
+  if (!key) {
+    return res.status(400).send("Missing storage key");
+  }
+  if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
+    console.error("[StorageProxy] Forge not configured");
+    return res.status(500).send("Storage proxy not configured");
+  }
+  try {
+    const forgeUrl = new URL("v1/storage/presign/get", ENV.forgeApiUrl.replace(/\/+$/, "") + "/");
+    forgeUrl.searchParams.set("path", key);
+    const forgeResp = await fetch(forgeUrl, {
+      headers: { Authorization: `Bearer ${ENV.forgeApiKey}` }
+    });
+    if (!forgeResp.ok) {
+      const errText = await forgeResp.text().catch(() => "");
+      console.error("[StorageProxy] Forge presign failed:", forgeResp.status, errText);
+      return res.status(502).send("Storage backend error");
+    }
+    const { url } = await forgeResp.json();
+    if (!url) {
+      return res.status(502).send("Empty signed URL");
+    }
+    res.set("Cache-Control", "public, max-age=86400, s-maxage=86400");
+    return res.redirect(307, url);
+  } catch (err) {
+    console.error("[StorageProxy] error:", err);
+    return res.status(502).send("Storage proxy error");
+  }
+});
 app.use(
   "/api/trpc",
   createExpressMiddleware({
