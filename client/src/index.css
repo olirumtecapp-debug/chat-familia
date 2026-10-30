@@ -2,6 +2,12 @@
 @import "tailwindcss";
 
 :root {
+  --background: #ffffff;
+  --foreground: #07152b;
+  --card: #ffffff;
+  --card-foreground: #07152b;
+  --popover: #ffffff;
+  --popover-foreground: #07152b;
   --bg: #f4f7fc;
   --surface: #ffffff;
   --surface-soft: #edf4fc;
@@ -19,6 +25,12 @@
 }
 
 .dark {
+  --background: #0e1726;
+  --foreground: #f8fafc;
+  --card: #0e1726;
+  --card-foreground: #f8fafc;
+  --popover: #0e1726;
+  --popover-foreground: #f8fafc;
   --bg: #070d18;
   --surface: #0e1726;
   --surface-soft: #142034;
@@ -168,6 +180,33 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   display: flex;
   flex-direction: column;
   min-width: 0;
+  position: relative;
+}
+
+.sidebar-fab {
+  position: absolute;
+  right: 18px;
+  bottom: 64px;
+  width: 50px;
+  height: 50px;
+  border-radius: 9999px;
+  background: #0080EA;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0, 128, 234, 0.45);
+  border: none;
+  cursor: pointer;
+  z-index: 20;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+.sidebar-fab:hover {
+  transform: scale(1.06);
+  background: #0060B8;
+}
+.sidebar-fab:active {
+  transform: scale(0.94);
 }
 
 .sidebar-header, .chat-header {
@@ -608,7 +647,16 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .stage-art span:nth-child(3) { right: -15px; bottom: -30px; }
 .stage-art span:nth-child(4) { right: 14px; top: 5px; width: 20px; height: 20px; }
 
-.profile-dialog { max-height: 90vh; overflow: auto; }
+.profile-dialog {
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--surface) !important;
+  color: var(--ink) !important;
+  border: 1px solid var(--line) !important;
+  box-shadow: var(--shadow) !important;
+  border-radius: 24px !important;
+  padding: 24px !important;
+}
 .profile-hero { display: flex; align-items: center; gap: 14px; padding: 14px; background: var(--surface-soft); border-radius: 16px; }
 .profile-avatar { width: 62px; height: 62px; border-radius: 20px; }
 .profile-hero > div { display: grid; gap: 2px; }

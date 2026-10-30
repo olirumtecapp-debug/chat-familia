@@ -198,45 +198,9 @@ function getInitialStore() {
         lastSignedIn: now
       }
     ],
-    conversations: [
-      {
-        id: 1,
-        type: "group",
-        directKey: null,
-        title: "Fam\xEDlia Silva \u2764\uFE0F",
-        groupOwnerId: 1,
-        createdAt: now,
-        updatedAt: now
-      }
-    ],
-    conversationMembers: [
-      {
-        conversationId: 1,
-        userId: 1,
-        memberRole: "admin",
-        joinedAt: now,
-        lastReadAt: now
-      }
-    ],
-    messages: [
-      {
-        id: 1,
-        conversationId: 1,
-        senderId: 1,
-        messageType: "text",
-        content: "Bem-vindos ao ChatForAll da Fam\xEDlia! \u{1F389} Tudo zerado e novo em folha!",
-        fileKey: null,
-        fileUrl: null,
-        fileName: null,
-        fileSize: null,
-        mimeType: null,
-        duration: null,
-        replyToId: null,
-        createdAt: now,
-        updatedAt: now,
-        deletedAt: null
-      }
-    ],
+    conversations: [],
+    conversationMembers: [],
+    messages: [],
     messageStatuses: [],
     messageDeletions: [],
     calls: [],
@@ -250,7 +214,11 @@ function loadStore() {
     if (fs.existsSync(STORE_FILE)) {
       const raw = fs.readFileSync(STORE_FILE, "utf-8");
       const parsed = JSON.parse(raw);
-      return reviveDates(parsed);
+      const data = reviveDates(parsed);
+      if (data && Array.isArray(data.conversations)) {
+        data.conversations = data.conversations.filter((c) => c.title !== "Fam\xEDlia Silva \u2764\uFE0F");
+      }
+      return data;
     }
   } catch (e) {
     console.warn("[mockDb] Failed to load store, using fresh initial store", e);
@@ -336,6 +304,7 @@ function extractCondition(cond) {
         else if (v.includes(" in ") || v.includes(" in(")) op = "in";
         else if (v.includes(" is not null")) op = "is_not_null";
         else if (v.includes(" is null")) op = "is_null";
+        else if (v.includes(" like ") || v.toLowerCase().includes("like")) op = "like";
         else if (v.includes("=")) op = "=";
       }
     } else if (chunk !== null && typeof chunk !== "undefined") {
@@ -384,6 +353,11 @@ function evaluateParsed(item, parsed) {
           return targetVal.some((t2) => typeof t2 === "string" && typeof val === "string" ? val.toLowerCase() === t2.toLowerCase() : val == t2);
         }
         return false;
+      case "like": {
+        if (typeof val !== "string" || typeof targetVal !== "string") return false;
+        const cleanPattern = targetVal.replace(/[%_\\]/g, (match) => match === "%" ? ".*" : match === "_" ? "." : "\\\\");
+        return new RegExp(`^${cleanPattern}$`, "i").test(val);
+      }
       case "is_null":
         return val === null || val === void 0;
       case "is_not_null":
@@ -1745,10 +1719,15 @@ var profileRouter = router({
     await db.update(users).set({ lastSeen: /* @__PURE__ */ new Date() }).where(eq5(users.id, ctx.user.id));
     return { success: true };
   }),
-  search: protectedProcedure.input(z5.object({ query: z5.string().trim().min(1).max(120) })).query(async ({ ctx, input }) => {
+  search: protectedProcedure.input(z5.object({ query: z5.string().trim().max(120).optional().default("") })).query(async ({ ctx, input }) => {
     const db = await requireDatabase();
-    const term = `%${input.query.replace(/[%_\\]/g, "\\$&")}%`;
-    const results = await db.select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(users).where(and4(ne4(users.id, ctx.user.id), or2(like(users.name, term), like(users.email, term)))).orderBy(desc3(users.lastSeen)).limit(20);
+    const rawQuery = (input.query || "").trim();
+    let whereClause = ne4(users.id, ctx.user.id);
+    if (rawQuery.length > 0) {
+      const term = `%${rawQuery.replace(/[%_\\]/g, "\\$&")}%`;
+      whereClause = and4(ne4(users.id, ctx.user.id), or2(like(users.name, term), like(users.email, term)));
+    }
+    const results = await db.select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(users).where(whereClause).orderBy(desc3(users.lastSeen)).limit(50);
     return results.map((user) => ({ ...user, online: isOnline(user.lastSeen) }));
   })
 });

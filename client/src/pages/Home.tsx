@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft, Bell, Camera, Check, CheckCheck, ChevronLeft, CircleUserRound, Copy, Download, FileText, ImagePlus,
-  Info, Loader2, LogOut, Menu, MessageCircleMore, Mic, Moon, MoreHorizontal, Paperclip,
-  Phone, Plus, Search, SendHorizonal, Smartphone, Smile, Sun, Trash2, UserRoundPlus, Video, X,
+  Info, Loader2, LogOut, Menu, MessageCircle, MessageCircleMore, MessageSquarePlus, Mic, Moon, MoreHorizontal, Paperclip,
+  Phone, Plus, Search, SendHorizonal, Smartphone, Smile, Sun, Trash2, UserRoundPlus, Users, Video, X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -333,37 +333,181 @@ function Onboarding({ onDone }: { onDone: () => void }) {
 
 function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenChange: (value: boolean) => void; profile: any }) {
   const utils = trpc.useUtils();
-  const update = trpc.profile.update.useMutation({ onSuccess: () => toast.success("Perfil atualizado.") });
-  const avatar = trpc.profile.updateAvatar.useMutation({ onSuccess: async () => { await utils.profile.me.invalidate(); toast.success("Foto atualizada."); }, onError: error => toast.error(error.message) });
-  const removeAvatar = trpc.profile.removeAvatar.useMutation({ onSuccess: () => toast.success("Foto removida.") });
+  const update = trpc.profile.update.useMutation({
+    onSuccess: async () => {
+      await utils.profile.me.invalidate();
+      toast.success("Perfil atualizado com sucesso!");
+      onOpenChange(false);
+    },
+    onError: error => toast.error(error.message),
+  });
+  const avatar = trpc.profile.updateAvatar.useMutation({
+    onSuccess: async () => {
+      await utils.profile.me.invalidate();
+      toast.success("Foto atualizada com sucesso.");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const removeAvatar = trpc.profile.removeAvatar.useMutation({
+    onSuccess: async () => {
+      await utils.profile.me.invalidate();
+      toast.success("Foto removida.");
+    },
+    onError: error => toast.error(error.message),
+  });
   const [name, setName] = useState(profile?.name || "");
   const [email, setEmail] = useState(profile?.email || "");
   const [status, setStatus] = useState(profile?.status || "Disponível");
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { setName(profile?.name || ""); setEmail(profile?.email || ""); setStatus(profile?.status || "Disponível"); }, [profile]);
+
+  useEffect(() => {
+    setName(profile?.name || "");
+    setEmail(profile?.email || "");
+    setStatus(profile?.status || "Disponível");
+  }, [profile]);
+
   const upload = async (file?: File) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) return toast.error("Escolha uma imagem em formato compatível.");
-    try { avatar.mutate({ dataUrl: await compressImage(file, 640), name: file.name }); } catch { toast.error("Não foi possível preparar a foto."); }
+    try {
+      avatar.mutate({ dataUrl: await compressImage(file, 640), name: file.name });
+    } catch {
+      toast.error("Não foi possível preparar a foto.");
+    }
   };
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="profile-dialog">
-    <DialogHeader><DialogTitle>Seu perfil</DialogTitle><DialogDescription>Atualize como você aparece nas conversas.</DialogDescription></DialogHeader>
-    <div className="profile-hero"><Avatar name={profile?.name} url={profile?.avatarUrl} className="profile-avatar" />
-      <div><strong>{profile?.name || "Seu perfil"}</strong><span>{profile?.email}</span></div></div>
-    <div className="profile-actions"><Button variant="outline" onClick={() => fileRef.current?.click()} disabled={avatar.isPending}><Camera /> Alterar foto</Button>{profile?.avatarUrl && <Button variant="ghost" onClick={() => removeAvatar.mutate()}><Trash2 /> Remover</Button>}<input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" capture="user" hidden onChange={event => upload(event.target.files?.[0])} /></div>
-    <form className="form-stack" onSubmit={event => { event.preventDefault(); update.mutate({ name, email, status }); }}>
-      <label>Nome<Input value={name} onChange={event => setName(event.target.value)} /></label>
-      <label>E-mail<Input value={email} type="email" onChange={event => setEmail(event.target.value)} /></label>
-      <label>Status<Textarea value={status} maxLength={280} onChange={event => setStatus(event.target.value)} /></label>
-      <Button type="submit" disabled={update.isPending}>{update.isPending && <Loader2 className="animate-spin" />} Salvar alterações</Button>
-    </form>
-  </DialogContent></Dialog>;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="profile-dialog sm:max-w-md bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-slate-900 dark:text-slate-100 shadow-2xl rounded-2xl p-6">
+        <DialogHeader className="space-y-1">
+          <DialogTitle className="text-xl font-bold text-slate-900 dark:text-white">Meu Perfil</DialogTitle>
+          <DialogDescription className="text-sm text-slate-500 dark:text-slate-400">
+            Atualize seu nome, foto e status para que sua família reconheça você.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-[#142034] border border-slate-200 dark:border-slate-800 my-2">
+          <Avatar name={profile?.name} url={profile?.avatarUrl} className="w-16 h-16 rounded-2xl border-2 border-[#0080EA] shadow-sm" />
+          <div className="flex-1 min-w-0">
+            <strong className="block text-base font-semibold truncate text-slate-900 dark:text-white">
+              {profile?.name || "Seu perfil"}
+            </strong>
+            <span className="block text-xs text-slate-500 dark:text-slate-400 truncate">{profile?.email}</span>
+            <span className="inline-block mt-1 text-[11px] font-medium text-[#0080EA] bg-[#0080EA]/10 dark:bg-[#0080EA]/20 px-2.5 py-0.5 rounded-full">
+              {status || "Disponível"}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={avatar.isPending}
+            className="flex-1 border-slate-300 dark:border-slate-700 hover:bg-[#0080EA]/10 font-medium"
+          >
+            <Camera className="w-4 h-4 mr-1.5 text-[#0080EA]" /> Alterar foto
+          </Button>
+          {profile?.avatarUrl && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => removeAvatar.mutate()}
+              disabled={removeAvatar.isPending}
+              className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+            >
+              <Trash2 className="w-4 h-4 mr-1.5" /> Remover
+            </Button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            capture="user"
+            hidden
+            onChange={event => upload(event.target.files?.[0])}
+          />
+        </div>
+
+        <form
+          className="space-y-4 pt-2"
+          onSubmit={event => {
+            event.preventDefault();
+            update.mutate({ name, email, status });
+          }}
+        >
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Nome completo</label>
+            <Input
+              value={name}
+              onChange={event => setName(event.target.value)}
+              placeholder="Seu nome"
+              required
+              className="bg-white dark:bg-[#0E1726] border-slate-300 dark:border-slate-700 text-sm"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">E-mail</label>
+            <Input
+              value={email}
+              type="email"
+              onChange={event => setEmail(event.target.value)}
+              placeholder="seuemail@exemplo.com"
+              required
+              className="bg-white dark:bg-[#0E1726] border-slate-300 dark:border-slate-700 text-sm"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Status / Recado</label>
+            <Textarea
+              value={status}
+              maxLength={280}
+              onChange={event => setStatus(event.target.value)}
+              placeholder="Ex: Disponível, Na estrada, Em reunião..."
+              rows={2}
+              className="bg-white dark:bg-[#0E1726] border-slate-300 dark:border-slate-700 resize-none text-sm"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              className="border-slate-300 dark:border-slate-700 text-xs font-medium"
+            >
+              Fechar
+            </Button>
+            <Button
+              type="submit"
+              disabled={update.isPending}
+              className="bg-[#0080EA] hover:bg-[#0060B8] text-white font-medium text-xs shadow-md"
+            >
+              {update.isPending ? <Loader2 className="animate-spin w-3.5 h-3.5 mr-1.5" /> : null}
+              Salvar alterações
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpenChange: (value: boolean) => void; onChoose: (conversationId: number, contactName?: string) => void }) {
   const utils = trpc.useUtils();
-  const [query, setQuery] = useState(""); const [groupMode, setGroupMode] = useState(false); const [title, setTitle] = useState(""); const [selectedPeople, setSelectedPeople] = useState<number[]>([]);
-  const search = trpc.profile.search.useQuery({ query: query || "_" }, { enabled: query.trim().length > 0 });
+  const [query, setQuery] = useState("");
+  const [groupMode, setGroupMode] = useState(false);
+  const [title, setTitle] = useState("");
+  const [selectedPeople, setSelectedPeople] = useState<number[]>([]);
+
+  // Automatically fetch contacts when dialog is open without requiring text query
+  const search = trpc.profile.search.useQuery({ query: query.trim() }, { enabled: open });
+
   const create = trpc.messaging.createDirect.useMutation({
     onSuccess: (result, variables) => {
       const contact = search.data?.find(p => p.id === variables.userId);
@@ -374,19 +518,135 @@ function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpen
     },
     onError: error => toast.error(error.message),
   });
-  const createGroup = trpc.groups.create.useMutation({ onSuccess: result => { onChoose(result.conversationId); onOpenChange(false); setQuery(""); setSelectedPeople([]); setTitle(""); setGroupMode(false); } });
-  const toggle = (id: number) => setSelectedPeople(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="new-chat-dialog">
-    <DialogHeader><DialogTitle>{groupMode ? "Novo grupo" : "Nova conversa"}</DialogTitle><DialogDescription>{groupMode ? "Escolha as pessoas e dê um nome ao grupo." : "Encontre alguém pelo nome ou e-mail."}</DialogDescription></DialogHeader>
-    {!groupMode && <div className="dialog-switch"><Button variant="outline" onClick={() => setGroupMode(true)}><UserRoundPlus /> Criar grupo</Button></div>}
-    {groupMode && <div className="group-create-bar"><Input value={title} onChange={event => setTitle(event.target.value)} placeholder="Nome do grupo" /><Button disabled={createGroup.isPending || selectedPeople.length < 1 || title.trim().length < 2} onClick={() => createGroup.mutate({ title, memberIds: selectedPeople })}>{createGroup.isPending ? <Loader2 className="animate-spin" /> : <Plus />} Criar</Button></div>}
-    <div className="search-field"><Search /><Input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Pesquisar pessoas" /></div>
-    <div className="people-results">{query && search.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Buscando...</div>}
-      {query && !search.isLoading && !search.data?.length && <div className="quiet-state">Nenhuma pessoa encontrada.</div>}
-      {search.data?.map(person => <button className={cn("person-row", selectedPeople.includes(person.id) && "selected")} key={person.id} onClick={() => groupMode ? toggle(person.id) : create.mutate({ userId: person.id })} disabled={create.isPending || createGroup.isPending}>
-        <Avatar name={person.name} url={person.avatarUrl} /><span><strong>{person.name}</strong><small>{person.email}</small></span><span className={cn("presence-dot", person.online && "online")} />{groupMode && selectedPeople.includes(person.id) && <Check className="selected-check" />}</button>)}
-    </div>
-  </DialogContent></Dialog>;
+
+  const createGroup = trpc.groups.create.useMutation({
+    onSuccess: result => {
+      onChoose(result.conversationId);
+      onOpenChange(false);
+      setQuery("");
+      setSelectedPeople([]);
+      setTitle("");
+      setGroupMode(false);
+    },
+    onError: error => toast.error(error.message),
+  });
+
+  const toggle = (id: number) => setSelectedPeople(current => (current.includes(id) ? current.filter(item => item !== id) : [...current, id]));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="new-chat-dialog sm:max-w-md bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-slate-900 dark:text-slate-100 shadow-2xl rounded-2xl p-6">
+        <DialogHeader className="space-y-1">
+          <DialogTitle className="text-xl font-bold text-slate-900 dark:text-white">
+            {groupMode ? "Criar novo grupo" : "Nova conversa"}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
+            {groupMode ? "Escolha as pessoas da família e dê um nome ao grupo." : "Toque em qualquer pessoa abaixo para começar a conversar na hora."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {!groupMode && (
+          <div className="flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => setGroupMode(true)} className="text-xs border-slate-300 dark:border-slate-700">
+              <UserRoundPlus className="w-3.5 h-3.5 mr-1.5 text-[#0080EA]" /> Criar grupo familiar
+            </Button>
+          </div>
+        )}
+
+        {groupMode && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <Input
+                value={title}
+                onChange={event => setTitle(event.target.value)}
+                placeholder="Nome do grupo (ex: Família)"
+                className="bg-white dark:bg-[#0E1726] text-sm"
+              />
+              <Button
+                disabled={createGroup.isPending || selectedPeople.length < 1 || title.trim().length < 2}
+                onClick={() => createGroup.mutate({ title, memberIds: selectedPeople })}
+                className="bg-[#0080EA] hover:bg-[#0060B8] text-white text-xs whitespace-nowrap"
+              >
+                {createGroup.isPending ? <Loader2 className="animate-spin w-3.5 h-3.5 mr-1" /> : <Plus className="w-3.5 h-3.5 mr-1" />} Criar ({selectedPeople.length})
+              </Button>
+            </div>
+            <button
+              type="button"
+              className="text-xs text-[#0080EA] hover:underline"
+              onClick={() => { setGroupMode(false); setSelectedPeople([]); }}
+            >
+              ← Voltar para conversa individual
+            </button>
+          </div>
+        )}
+
+        <div className="search-field relative my-1">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+          <Input
+            autoFocus
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="Pesquisar por nome ou e-mail..."
+            className="pl-9 bg-slate-50 dark:bg-[#142034] text-sm"
+          />
+        </div>
+
+        <div className="people-results overflow-y-auto max-h-[320px] divide-y divide-slate-100 dark:divide-slate-800 -mx-2 px-2">
+          {search.isLoading && (
+            <div className="quiet-state py-8 text-center text-xs text-slate-500">
+              <Loader2 className="animate-spin w-5 h-5 mx-auto mb-2 text-[#0080EA]" />
+              Buscando contatos cadastrados...
+            </div>
+          )}
+
+          {!search.isLoading && !search.data?.length && (
+            <div className="quiet-state py-8 text-center text-xs text-slate-500">
+              <Users className="w-8 h-8 mx-auto mb-2 text-slate-400 opacity-60" />
+              Nenhum contato encontrado.
+            </div>
+          )}
+
+          {search.data?.map(person => (
+            <button
+              type="button"
+              className={cn(
+                "person-row w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 dark:hover:bg-[#142034] transition-colors rounded-xl my-1",
+                selectedPeople.includes(person.id) && "bg-[#0080EA]/10 dark:bg-[#0080EA]/20 font-semibold"
+              )}
+              key={person.id}
+              onClick={() => (groupMode ? toggle(person.id) : create.mutate({ userId: person.id }))}
+              disabled={create.isPending || createGroup.isPending}
+            >
+              <div className="relative shrink-0">
+                <Avatar name={person.name} url={person.avatarUrl} className="w-10 h-10 rounded-full" />
+                <span className={cn("presence-dot absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-[#0E1726]", person.online ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")} />
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <strong className="text-sm font-semibold truncate text-slate-900 dark:text-white">
+                    {person.name}
+                  </strong>
+                  {!groupMode && (
+                    <span className="text-[11px] font-semibold text-[#0080EA] bg-[#0080EA]/10 dark:bg-[#0080EA]/20 px-2 py-0.5 rounded-full shrink-0 ml-2">
+                      Conversar
+                    </span>
+                  )}
+                </div>
+                <small className="block text-xs text-slate-500 dark:text-slate-400 truncate">
+                  {person.email || person.status || "Disponível"}
+                </small>
+              </div>
+
+              {groupMode && selectedPeople.includes(person.id) && (
+                <Check className="selected-check w-4 h-4 text-[#0080EA] ml-auto shrink-0" />
+              )}
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function GroupInfoDialog({ open, onOpenChange, conversationId, currentUserId }: { open: boolean; onOpenChange: (value: boolean) => void; conversationId?: number; currentUserId?: number }) {
@@ -455,6 +715,18 @@ export default function Home() {
   const conversations = trpc.messaging.list.useQuery(undefined, { enabled: Boolean(profile.data?.isComplete), refetchInterval: 2_500 });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pendingContact, setPendingContact] = useState<{ name: string } | null>(null);
+  const [sidebarTab, setSidebarTab] = useState<"chats" | "contacts">("chats");
+  const allContacts = trpc.profile.search.useQuery({ query: "" }, { enabled: Boolean(profile.data?.isComplete), refetchInterval: 10_000 });
+  const createDirect = trpc.messaging.createDirect.useMutation({
+    onSuccess: (result, variables) => {
+      const contact = allContacts.data?.find(p => p.id === variables.userId);
+      utils.messaging.list.invalidate();
+      chooseConversation(result.conversationId, contact?.name);
+      setSidebarTab("chats");
+      if (window.innerWidth < 768) setSidebarOpen(false);
+    },
+    onError: error => toast.error(error.message),
+  });
   const [profileOpen, setProfileOpen] = useState(false); const [newChatOpen, setNewChatOpen] = useState(false); const [groupInfoOpen, setGroupInfoOpen] = useState(false); const [sidebarOpen, setSidebarOpen] = useState(true);
   const [downloadApkOpen, setDownloadApkOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -512,7 +784,136 @@ export default function Home() {
       <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/icon-192.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Convidar amigo por link" onClick={() => setInviteModalOpen(true)} title="Convidar amigo com link pessoal"><UserPlus className="w-5 h-5 text-[#0080EA] dark:text-[#38BDF8]" /></button><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
       <button className="account-card" onClick={() => setProfileOpen(true)}><Avatar name={profile.data.name} url={profile.data.avatarUrl} /><span><strong>{profile.data.name}</strong><small>{profile.data.status || "Disponível"}</small></span><MoreHorizontal /></button>
       <div className="sidebar-search"><Search /><Input placeholder="Pesquisar conversas" onChange={event => { const term = event.target.value.toLowerCase(); if (!term) return; const match = conversations.data?.find(item => item.participant?.name?.toLowerCase().includes(term)); if (match) setSelectedId(match.id); }} /></div>
-      <div className="conversation-list">{conversations.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando conversas</div>}{!conversations.isLoading && !conversations.data?.length && <div className="clean-empty"><MessageCircleMore /><strong>Suas conversas começam aqui.</strong><span>Crie uma nova conversa para falar com alguém da família.</span><Button variant="outline" onClick={() => setNewChatOpen(true)}><UserRoundPlus /> Nova conversa</Button></div>}{conversations.data?.map(conversation => <button key={conversation.id} className={cn("conversation-row", selectedId === conversation.id && "active", conversation.unreadCount > 0 && "unread")} onClick={() => chooseConversation(conversation.id)}><Avatar name={conversation.participant?.name || conversation.title} url={conversation.participant?.avatarUrl} /><span className="conversation-copy"><span><strong>{conversation.participant?.name || conversation.title || "Conversa"}</strong><time>{formatTime(conversation.latestMessage?.createdAt)}</time></span><span><small>{conversation.latestMessage?.deletedAt ? "Mensagem apagada" : conversation.latestMessage?.messageType === "image" ? "Imagem" : conversation.latestMessage?.messageType === "audio" ? "Mensagem de voz" : conversation.latestMessage?.messageType === "file" ? "Documento" : conversation.latestMessage?.content || "Conversa iniciada"}</small>{conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}</span></span></button>)}</div>
+      
+      <div className="flex px-3 pt-2 pb-1 gap-2 border-b border-[var(--line)]">
+        <button
+          type="button"
+          className={cn(
+            "flex-1 py-1.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+            sidebarTab === "chats"
+              ? "bg-[#0080EA] text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          )}
+          onClick={() => setSidebarTab("chats")}
+        >
+          <MessageCircle className="w-3.5 h-3.5" />
+          Conversas {conversations.data?.length ? `(${conversations.data.length})` : ""}
+        </button>
+        <button
+          type="button"
+          className={cn(
+            "flex-1 py-1.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+            sidebarTab === "contacts"
+              ? "bg-[#0080EA] text-white shadow-sm"
+              : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          )}
+          onClick={() => setSidebarTab("contacts")}
+        >
+          <Users className="w-3.5 h-3.5" />
+          Contatos {allContacts.data?.length ? `(${allContacts.data.length})` : ""}
+        </button>
+      </div>
+
+      {sidebarTab === "chats" && (
+        <div className="conversation-list flex-1 overflow-y-auto">
+          {conversations.isLoading && (
+            <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando conversas...</div>
+          )}
+          {!conversations.isLoading && !conversations.data?.length && (
+            <div className="clean-empty p-6 text-center">
+              <MessageCircleMore className="w-12 h-12 text-[#0080EA] mx-auto mb-2 opacity-80" />
+              <strong className="text-sm font-semibold block mb-1 text-slate-800 dark:text-slate-200">Nenhuma conversa aberta ainda</strong>
+              <span className="text-xs text-muted-foreground block mb-4">Escolha alguém da sua família nos contatos para começar a conversar!</span>
+              <Button
+                size="sm"
+                className="bg-[#0080EA] hover:bg-[#0060B8] text-white text-xs mx-auto shadow-md"
+                onClick={() => setSidebarTab("contacts")}
+              >
+                <Users className="w-3.5 h-3.5 mr-1.5" /> Ver contatos cadastrados ({allContacts.data?.length || 0})
+              </Button>
+            </div>
+          )}
+          {conversations.data?.map(conversation => (
+            <button
+              key={conversation.id}
+              className={cn("conversation-row", selectedId === conversation.id && "active", conversation.unreadCount > 0 && "unread")}
+              onClick={() => chooseConversation(conversation.id)}
+            >
+              <Avatar name={conversation.participant?.name || conversation.title} url={conversation.participant?.avatarUrl} />
+              <span className="conversation-copy">
+                <span>
+                  <strong>{conversation.participant?.name || conversation.title || "Conversa"}</strong>
+                  <time>{formatTime(conversation.latestMessage?.createdAt)}</time>
+                </span>
+                <span>
+                  <small>
+                    {conversation.latestMessage?.deletedAt
+                      ? "Mensagem apagada"
+                      : conversation.latestMessage?.messageType === "image"
+                      ? "Imagem"
+                      : conversation.latestMessage?.messageType === "audio"
+                      ? "Mensagem de voz"
+                      : conversation.latestMessage?.messageType === "file"
+                      ? "Documento"
+                      : conversation.latestMessage?.content || "Conversa iniciada"}
+                  </small>
+                  {conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {sidebarTab === "contacts" && (
+        <div className="conversation-list flex-1 overflow-y-auto">
+          {allContacts.isLoading && (
+            <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando contatos...</div>
+          )}
+          {!allContacts.isLoading && !allContacts.data?.length && (
+            <div className="clean-empty p-6 text-center">
+              <Users className="w-10 h-10 text-slate-400 mx-auto mb-2 opacity-60" />
+              <strong className="text-sm font-semibold block mb-1 text-slate-800 dark:text-slate-200">Nenhum outro contato cadastrado</strong>
+              <span className="text-xs text-muted-foreground block mb-4">Envie o link de convite para sua esposa e filhos!</span>
+              <Button size="sm" variant="outline" onClick={() => setInviteModalOpen(true)} className="text-xs border-slate-300 dark:border-slate-700">
+                <UserPlus className="w-3.5 h-3.5 mr-1.5 text-[#0080EA]" /> Convidar família
+              </Button>
+            </div>
+          )}
+          {allContacts.data?.map(contact => (
+            <button
+              key={contact.id}
+              className="conversation-row hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors w-full text-left cursor-pointer"
+              onClick={() => createDirect.mutate({ userId: contact.id })}
+              disabled={createDirect.isPending}
+            >
+              <div className="relative shrink-0">
+                <Avatar name={contact.name} url={contact.avatarUrl} />
+                <span className={cn("presence-dot absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-[#0E1726]", contact.online ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")} />
+              </div>
+              <span className="conversation-copy flex-1 min-w-0">
+                <span className="flex items-center justify-between">
+                  <strong className="truncate font-semibold text-sm text-slate-900 dark:text-white">{contact.name}</strong>
+                  <span className="text-[11px] font-semibold text-[#0080EA] bg-[#0080EA]/10 dark:bg-[#0080EA]/20 px-2 py-0.5 rounded-full shrink-0 ml-2">
+                    Conversar
+                  </span>
+                </span>
+                <small className="truncate text-xs text-muted-foreground block">{contact.email || contact.status || "Disponível"}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <button
+        className="sidebar-fab"
+        onClick={() => setNewChatOpen(true)}
+        title="Iniciar nova conversa ou criar grupo"
+        aria-label="Nova conversa"
+      >
+        <MessageSquarePlus className="w-6 h-6 text-white" />
+      </button>
+
       <footer className="sidebar-footer px-3 py-2 border-t border-[var(--line)] bg-[var(--surface)] flex items-center justify-between gap-1 overflow-x-auto">
         <button
           className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#0080EA]/10 hover:bg-[#0080EA]/20 text-[#0080EA] dark:text-[#38BDF8] font-bold text-xs border border-[#0080EA]/20 whitespace-nowrap transition-all cursor-pointer"

@@ -57,15 +57,22 @@ export const profileRouter = router({
     return { success: true };
   }),
 
-  search: protectedProcedure.input(z.object({ query: z.string().trim().min(1).max(120) })).query(async ({ ctx, input }) => {
-    const db = await requireDatabase();
-    const term = `%${input.query.replace(/[%_\\]/g, "\\$&")}%`;
-    const results = await db
-      .select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen })
-      .from(users)
-      .where(and(ne(users.id, ctx.user.id), or(like(users.name, term), like(users.email, term))))
-      .orderBy(desc(users.lastSeen))
-      .limit(20);
-    return results.map(user => ({ ...user, online: isOnline(user.lastSeen) }));
-  }),
+  search: protectedProcedure
+    .input(z.object({ query: z.string().trim().max(120).optional().default("") }))
+    .query(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      const rawQuery = (input.query || "").trim();
+      let whereClause: any = ne(users.id, ctx.user.id);
+      if (rawQuery.length > 0) {
+        const term = `%${rawQuery.replace(/[%_\\]/g, "\\$&")}%`;
+        whereClause = and(ne(users.id, ctx.user.id), or(like(users.name, term), like(users.email, term)));
+      }
+      const results = await db
+        .select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen })
+        .from(users)
+        .where(whereClause)
+        .orderBy(desc(users.lastSeen))
+        .limit(50);
+      return results.map(user => ({ ...user, online: isOnline(user.lastSeen) }));
+    }),
 });
