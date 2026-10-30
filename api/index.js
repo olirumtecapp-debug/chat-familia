@@ -1,6 +1,7 @@
 // api/serverless.ts
+import "dotenv/config";
 import express from "express";
-import crypto4 from "crypto";
+import crypto3 from "crypto";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // shared/const.ts
@@ -160,8 +161,8 @@ var typingStates = mysqlTable(
 
 // server/_core/env.ts
 var ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
+  appId: process.env.VITE_APP_ID ?? "chatforall",
+  cookieSecret: process.env.JWT_SECRET || "chatforall-secret-key-familia-2026-indestrutivel",
   databaseUrl: process.env.DATABASE_URL ?? "",
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
@@ -170,72 +171,559 @@ var ENV = {
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? ""
 };
 
+// server/mockDb.ts
+import fs from "fs";
+import path from "path";
+var IS_VERCEL = !!process.env.VERCEL;
+var DATA_DIR = IS_VERCEL ? "/tmp" : path.resolve(process.cwd(), "server", "data");
+var STORE_FILE = path.join(DATA_DIR, "chat-store.json");
+function getInitialStore() {
+  const now = /* @__PURE__ */ new Date();
+  return {
+    users: [
+      {
+        id: 1,
+        openId: "murilo_silva_pai",
+        name: "Murilo Silva",
+        email: "olirumtecapp@gmail.com",
+        nickname: "@olirumpai",
+        avatarKey: null,
+        avatarUrl: null,
+        status: "Dispon\xEDvel \u{1F680}",
+        lastSeen: now,
+        loginMethod: "commercial-auth",
+        role: "admin",
+        createdAt: now,
+        updatedAt: now,
+        lastSignedIn: now
+      }
+    ],
+    conversations: [
+      {
+        id: 1,
+        type: "group",
+        directKey: null,
+        title: "Fam\xEDlia Silva \u2764\uFE0F",
+        groupOwnerId: 1,
+        createdAt: now,
+        updatedAt: now
+      }
+    ],
+    conversationMembers: [
+      {
+        conversationId: 1,
+        userId: 1,
+        memberRole: "admin",
+        joinedAt: now,
+        lastReadAt: now
+      }
+    ],
+    messages: [
+      {
+        id: 1,
+        conversationId: 1,
+        senderId: 1,
+        messageType: "text",
+        content: "Bem-vindos ao ChatForAll da Fam\xEDlia! \u{1F389} Tudo zerado e novo em folha!",
+        fileKey: null,
+        fileUrl: null,
+        fileName: null,
+        fileSize: null,
+        mimeType: null,
+        duration: null,
+        replyToId: null,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null
+      }
+    ],
+    messageStatuses: [],
+    messageDeletions: [],
+    calls: [],
+    callSignals: [],
+    typingStates: []
+  };
+}
+var store = loadStore();
+function loadStore() {
+  try {
+    if (fs.existsSync(STORE_FILE)) {
+      const raw = fs.readFileSync(STORE_FILE, "utf-8");
+      const parsed = JSON.parse(raw);
+      return reviveDates(parsed);
+    }
+  } catch (e) {
+    console.warn("[mockDb] Failed to load store, using fresh initial store", e);
+  }
+  return getInitialStore();
+}
+function reviveDates(obj) {
+  if (!obj || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(reviveDates);
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) {
+      out[k] = new Date(v);
+    } else if (typeof v === "object" && v !== null) {
+      out[k] = reviveDates(v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+function persistStore() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    fs.writeFileSync(STORE_FILE, JSON.stringify(store, null, 2), "utf-8");
+  } catch (e) {
+    console.warn("[mockDb] Persist error:", e);
+  }
+}
+function getTableName(table) {
+  if (!table) return "users";
+  const name = table[Symbol.for("drizzle:Name")] || table._?.name || table.name || (typeof table === "string" ? table : "");
+  if (name === "users") return "users";
+  if (name === "conversations") return "conversations";
+  if (name === "conversation_members" || name === "conversationMembers") return "conversationMembers";
+  if (name === "messages") return "messages";
+  if (name === "message_status" || name === "messageStatuses") return "messageStatuses";
+  if (name === "message_deletions" || name === "messageDeletions") return "messageDeletions";
+  if (name === "calls") return "calls";
+  if (name === "call_signals" || name === "callSignals") return "callSignals";
+  if (name === "typing_states" || name === "typingStates") return "typingStates";
+  return "users";
+}
+function extractCondition(cond) {
+  if (!cond) return null;
+  if (!cond.queryChunks || !Array.isArray(cond.queryChunks)) return null;
+  const chunks = cond.queryChunks;
+  if (chunks.length === 3 && chunks[0]?.value?.[0] === "(" && chunks[2]?.value?.[0] === ")") {
+    return extractCondition(chunks[1]);
+  }
+  const isAnd = chunks.some((c) => typeof c?.value?.[0] === "string" && c.value[0].includes(" and "));
+  const isOr = chunks.some((c) => typeof c?.value?.[0] === "string" && c.value[0].includes(" or "));
+  if (isAnd) {
+    const subConds = chunks.filter((c) => c && c.queryChunks);
+    return { type: "and", conditions: subConds.map(extractCondition).filter(Boolean) };
+  }
+  if (isOr) {
+    const subConds = chunks.filter((c) => c && c.queryChunks);
+    return { type: "or", conditions: subConds.map(extractCondition).filter(Boolean) };
+  }
+  let colName = null;
+  let op = "=";
+  let targetVal = void 0;
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    if (chunk && chunk.queryChunks) {
+      const sub = extractCondition(chunk);
+      if (sub && sub.colName) return sub;
+      if (sub && (sub.type === "and" || sub.type === "or")) return sub;
+    }
+    if (chunk && chunk.name && typeof chunk.table !== "undefined") {
+      colName = chunk.name;
+    } else if (chunk && chunk.value && Array.isArray(chunk.value)) {
+      const v = chunk.value[0];
+      if (typeof v === "string") {
+        if (v.includes("<=")) op = "<=";
+        else if (v.includes(">=")) op = ">=";
+        else if (v.includes("<>") || v.includes("!=")) op = "<>";
+        else if (v.includes("<")) op = "<";
+        else if (v.includes(">")) op = ">";
+        else if (v.includes(" in ") || v.includes(" in(")) op = "in";
+        else if (v.includes(" is not null")) op = "is_not_null";
+        else if (v.includes(" is null")) op = "is_null";
+        else if (v.includes("=")) op = "=";
+      }
+    } else if (chunk !== null && typeof chunk !== "undefined") {
+      if (typeof chunk === "object" && "value" in chunk && chunk.constructor?.name === "Param") {
+        targetVal = chunk.value;
+      } else if (Array.isArray(chunk)) {
+        targetVal = chunk.map((item) => item?.value !== void 0 ? item.value : item);
+      } else if (typeof chunk !== "object" || chunk instanceof Date) {
+        targetVal = chunk;
+      }
+    }
+  }
+  return { type: "single", colName, op, targetVal };
+}
+function evaluateParsed(item, parsed) {
+  if (!parsed) return true;
+  if (parsed.type === "and") {
+    return parsed.conditions.every((c) => evaluateParsed(item, c));
+  }
+  if (parsed.type === "or") {
+    return parsed.conditions.some((c) => evaluateParsed(item, c));
+  }
+  if (parsed.type === "single") {
+    const { colName, op, targetVal } = parsed;
+    if (!colName) return true;
+    const val = item[colName];
+    switch (op) {
+      case "=":
+        if (targetVal instanceof Date && val instanceof Date) return val.getTime() === targetVal.getTime();
+        if (typeof targetVal === "string" && typeof val === "string") return val.toLowerCase() === targetVal.toLowerCase();
+        return val == targetVal;
+      case "<>":
+        if (targetVal instanceof Date && val instanceof Date) return val.getTime() !== targetVal.getTime();
+        if (typeof targetVal === "string" && typeof val === "string") return val.toLowerCase() !== targetVal.toLowerCase();
+        return val != targetVal;
+      case "<":
+        return val < targetVal;
+      case "<=":
+        return val <= targetVal;
+      case ">":
+        return val > targetVal;
+      case ">=":
+        return val >= targetVal;
+      case "in":
+        if (Array.isArray(targetVal)) {
+          return targetVal.some((t2) => typeof t2 === "string" && typeof val === "string" ? val.toLowerCase() === t2.toLowerCase() : val == t2);
+        }
+        return false;
+      case "is_null":
+        return val === null || val === void 0;
+      case "is_not_null":
+        return val !== null && val !== void 0;
+      default:
+        return true;
+    }
+  }
+  return true;
+}
+function matchesCondition(item, condition) {
+  if (!condition) return true;
+  const parsed = extractCondition(condition);
+  return evaluateParsed(item, parsed);
+}
+function getMockDb() {
+  return {
+    __isMock: true,
+    select: (fields) => {
+      let currentTable = null;
+      let condition = null;
+      let limitNum = null;
+      let orders = [];
+      const joins = [];
+      const queryBuilder = {
+        from: (table) => {
+          currentTable = table;
+          return queryBuilder;
+        },
+        innerJoin: (joinTable, onCond) => {
+          joins.push({ table: joinTable, on: onCond });
+          return queryBuilder;
+        },
+        where: (cond) => {
+          condition = cond;
+          return queryBuilder;
+        },
+        orderBy: (...orderList) => {
+          orders = orderList;
+          return queryBuilder;
+        },
+        limit: (n) => {
+          limitNum = n;
+          return queryBuilder;
+        },
+        then: (resolve, reject) => {
+          try {
+            const tableName = getTableName(currentTable);
+            let list = [...store[tableName] || []];
+            if (joins.length > 0) {
+              const joinedList = [];
+              for (const row of list) {
+                let matchAll = true;
+                const merged = { ...row };
+                for (const j of joins) {
+                  const jTableName = getTableName(j.table);
+                  const jTableRows = store[jTableName] || [];
+                  const jCond = extractCondition(j.on);
+                  const match = jTableRows.find((jRow) => {
+                    if (jCond && jCond.colName) {
+                      return jRow.id === row[jCond.colName] || jRow[jCond.colName] === row.id || jRow.id === row.userId || jRow.userId === row.id;
+                    }
+                    return true;
+                  });
+                  if (!match) {
+                    matchAll = false;
+                    break;
+                  }
+                  Object.assign(merged, match);
+                }
+                if (matchAll) joinedList.push(merged);
+              }
+              list = joinedList;
+            }
+            if (condition) {
+              list = list.filter((item) => matchesCondition(item, condition));
+            }
+            if (orders.length > 0) {
+              list.sort((a, b) => {
+                const aTime = a.createdAt?.getTime?.() || a.startedAt?.getTime?.() || a.id || 0;
+                const bTime = b.createdAt?.getTime?.() || b.startedAt?.getTime?.() || b.id || 0;
+                return bTime - aTime;
+              });
+            }
+            if (limitNum !== null) {
+              list = list.slice(0, limitNum);
+            }
+            if (fields && typeof fields === "object" && !Array.isArray(fields)) {
+              const fieldKeys = Object.keys(fields);
+              list = list.map((item) => {
+                const res = {};
+                for (const k of fieldKeys) {
+                  const colSpec = fields[k];
+                  const colName = colSpec?.name || k;
+                  res[k] = item[colName] !== void 0 ? item[colName] : item[k];
+                }
+                return res;
+              });
+            }
+            return Promise.resolve(list).then(resolve, reject);
+          } catch (err) {
+            if (reject) return Promise.reject(err).catch(reject);
+            throw err;
+          }
+        }
+      };
+      return queryBuilder;
+    },
+    insert: (table) => {
+      return {
+        values: (data) => {
+          const tableName = getTableName(table);
+          if (!store[tableName]) store[tableName] = [];
+          let executed = false;
+          const runInsert = (updateSet) => {
+            if (executed) return [{ insertId: 0 }];
+            executed = true;
+            const items = Array.isArray(data) ? data : [data];
+            let lastInsertId = 0;
+            for (const item of items) {
+              const tableItems = store[tableName];
+              const existingIdx = tableItems.findIndex((existing) => {
+                if (item.openId && existing.openId === item.openId) return true;
+                if (item.email && existing.email && item.email.toLowerCase() === existing.email.toLowerCase()) return true;
+                if (item.directKey && existing.directKey === item.directKey) return true;
+                if (item.conversationId && item.userId && existing.conversationId === item.conversationId && existing.userId === item.userId) return true;
+                if (item.id && existing.id === item.id) return true;
+                return false;
+              });
+              if (existingIdx >= 0) {
+                if (updateSet && typeof updateSet === "object") {
+                  Object.assign(tableItems[existingIdx], updateSet);
+                }
+                lastInsertId = tableItems[existingIdx].id || 0;
+              } else {
+                const maxId = tableItems.reduce((max, i) => Math.max(max, Number(i.id) || 0), 0);
+                const newItem = {
+                  id: item.id || maxId + 1,
+                  createdAt: /* @__PURE__ */ new Date(),
+                  updatedAt: /* @__PURE__ */ new Date(),
+                  ...item
+                };
+                tableItems.push(newItem);
+                lastInsertId = newItem.id;
+              }
+            }
+            persistStore();
+            return [{ insertId: lastInsertId }];
+          };
+          return {
+            onDuplicateKeyUpdate: ({ set }) => {
+              return Promise.resolve(runInsert(set));
+            },
+            then: (resolve, reject) => {
+              try {
+                return Promise.resolve(runInsert()).then(resolve, reject);
+              } catch (err) {
+                if (reject) return Promise.reject(err).catch(reject);
+                throw err;
+              }
+            }
+          };
+        }
+      };
+    },
+    update: (table) => {
+      let setValues = {};
+      return {
+        set: (values) => {
+          setValues = values;
+          return {
+            where: (condition) => {
+              return {
+                then: (resolve, reject) => {
+                  try {
+                    const tableName = getTableName(table);
+                    const list = store[tableName] || [];
+                    let affected = 0;
+                    for (const item of list) {
+                      if (matchesCondition(item, condition)) {
+                        Object.assign(item, setValues, { updatedAt: /* @__PURE__ */ new Date() });
+                        affected++;
+                      }
+                    }
+                    persistStore();
+                    return Promise.resolve([{ affectedRows: affected }]).then(resolve, reject);
+                  } catch (err) {
+                    if (reject) return Promise.reject(err).catch(reject);
+                    throw err;
+                  }
+                }
+              };
+            }
+          };
+        }
+      };
+    },
+    delete: (table) => {
+      return {
+        where: (condition) => {
+          return {
+            then: (resolve, reject) => {
+              try {
+                const tableName = getTableName(table);
+                const list = store[tableName] || [];
+                const beforeLen = list.length;
+                store[tableName] = list.filter((item) => !matchesCondition(item, condition));
+                const affected = beforeLen - store[tableName].length;
+                persistStore();
+                return Promise.resolve([{ affectedRows: affected }]).then(resolve, reject);
+              } catch (err) {
+                if (reject) return Promise.reject(err).catch(reject);
+                throw err;
+              }
+            }
+          };
+        }
+      };
+    }
+  };
+}
+
 // server/db.ts
 var database = null;
+var useMockFallback = false;
 async function getDb() {
+  if (useMockFallback) {
+    return getMockDb();
+  }
   if (!database && process.env.DATABASE_URL) {
     try {
       database = drizzle(process.env.DATABASE_URL);
     } catch (error) {
-      console.error("[Database] Connection initialization failed", error);
-      database = null;
+      console.warn("[Database] Drizzle init failed, using resilient store:", error);
+      useMockFallback = true;
+      return getMockDb();
     }
+  }
+  if (!database) {
+    return getMockDb();
   }
   return database;
 }
-async function upsertUser(user) {
-  if (!user.openId) throw new Error("User openId is required");
-  const db = await getDb();
-  if (!db) throw new Error("Database is unavailable");
-  const values = {
-    openId: user.openId,
-    name: user.name ?? "",
-    lastSignedIn: user.lastSignedIn ?? /* @__PURE__ */ new Date(),
-    role: user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user")
-  };
-  const updateSet = { lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date() };
-  for (const field of ["name", "email", "loginMethod"]) {
-    if (user[field] != null) {
-      values[field] = user[field];
-      updateSet[field] = user[field];
-    }
-  }
-  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
-}
-async function getUserByOpenId(openId) {
-  const db = await getDb();
-  if (!db) return void 0;
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-  return result[0];
-}
 async function requireDatabase() {
   const db = await getDb();
-  if (!db) throw new Error("Database is unavailable");
+  if (!db) return getMockDb();
   return db;
 }
+async function getUserByOpenId(openId) {
+  try {
+    const db = await getDb();
+    const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    return result[0];
+  } catch (err) {
+    console.warn("[Database] getUserByOpenId query failed, falling back to mockDb:", err?.message || err);
+    useMockFallback = true;
+    const mock = getMockDb();
+    const result = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
+    return result[0];
+  }
+}
 async function getUserByEmail(email) {
-  const db = await getDb();
-  if (!db) return void 0;
-  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  return result[0];
+  try {
+    const db = await getDb();
+    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    return result[0];
+  } catch (err) {
+    console.warn("[Database] getUserByEmail query failed, falling back to mockDb:", err?.message || err);
+    useMockFallback = true;
+    const mock = getMockDb();
+    const result = await mock.select().from(users).where(eq(users.email, email)).limit(1);
+    return result[0];
+  }
+}
+async function upsertUser(user) {
+  if (!user.openId) throw new Error("User openId is required");
+  try {
+    const db = await getDb();
+    const values = {
+      openId: user.openId,
+      name: user.name ?? "",
+      lastSignedIn: user.lastSignedIn ?? /* @__PURE__ */ new Date(),
+      role: user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "user")
+    };
+    const updateSet = { lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date() };
+    for (const field of ["name", "email", "loginMethod"]) {
+      if (user[field] != null) {
+        values[field] = user[field];
+        updateSet[field] = user[field];
+      }
+    }
+    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+  } catch (err) {
+    console.warn("[Database] upsertUser failed, using mockDb:", err?.message || err);
+    useMockFallback = true;
+    const mock = getMockDb();
+    await mock.insert(users).values(user).onDuplicateKeyUpdate({ set: { lastSignedIn: /* @__PURE__ */ new Date() } });
+  }
 }
 async function upsertLocalUser(input) {
-  const db = await getDb();
-  if (!db) throw new Error("Database is unavailable");
   const email = input.email.trim().toLowerCase();
   const name = input.name.trim();
-  const existing = await getUserByEmail(email);
-  if (existing) {
-    await db.update(users).set({ name, lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date(), loginMethod: "family-code" }).where(eq(users.id, existing.id));
-    const refreshed = await db.select().from(users).where(eq(users.id, existing.id)).limit(1);
-    return refreshed[0] || existing;
+  try {
+    const existing = await getUserByEmail(email);
+    const db = await getDb();
+    if (existing) {
+      await db.update(users).set({ name, lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date(), loginMethod: "commercial-auth" }).where(eq(users.id, existing.id));
+      const refreshed = await getUserByEmail(email);
+      return refreshed || existing;
+    }
+    const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    const now = /* @__PURE__ */ new Date();
+    await db.insert(users).values({ openId, name, email, loginMethod: "commercial-auth", lastSignedIn: now, lastSeen: now }).onDuplicateKeyUpdate({ set: { name, lastSignedIn: now, lastSeen: now, loginMethod: "commercial-auth" } });
+    try {
+      const createdUser = await getUserByOpenId(openId);
+      if (createdUser) {
+        const groups = await db.select().from(conversations).where(eq(conversations.type, "group")).limit(1);
+        if (groups[0]) {
+          await db.insert(conversationMembers).values({ conversationId: groups[0].id, userId: createdUser.id, memberRole: "member", joinedAt: now }).onDuplicateKeyUpdate({ set: { joinedAt: now } });
+        }
+      }
+    } catch (_) {
+    }
+    const user = await getUserByOpenId(openId);
+    if (!user) throw new Error("Local user could not be created");
+    return user;
+  } catch (err) {
+    console.warn("[Database] upsertLocalUser failed, falling back to mockDb:", err?.message || err);
+    useMockFallback = true;
+    const mock = getMockDb();
+    const existing = await mock.select().from(users).where(eq(users.email, email)).limit(1);
+    if (existing[0]) {
+      await mock.update(users).set({ name, lastSignedIn: /* @__PURE__ */ new Date() }).where(eq(users.id, existing[0].id));
+      return existing[0];
+    }
+    const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    await mock.insert(users).values({ openId, name, email, loginMethod: "commercial-auth", lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date() });
+    const user = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
+    return user[0];
   }
-  const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
-  const now = /* @__PURE__ */ new Date();
-  await db.insert(users).values({ openId, name, email, loginMethod: "family-code", lastSignedIn: now }).onDuplicateKeyUpdate({ set: { name, lastSignedIn: now, lastSeen: now, loginMethod: "family-code" } });
-  const user = await getUserByOpenId(openId);
-  if (!user) throw new Error("Local user could not be created");
-  return user;
 }
 
 // server/_core/cookies.ts
@@ -604,7 +1092,6 @@ function registerStorageProxy(app2) {
 }
 
 // server/routers.ts
-import { TRPCError as TRPCError7 } from "@trpc/server";
 import { z as z6 } from "zod";
 
 // server/_core/systemRouter.ts
@@ -749,17 +1236,6 @@ var systemRouter = router({
     };
   })
 });
-
-// server/localAuth.ts
-import crypto3 from "crypto";
-function validateFamilyCode(candidate) {
-  const configured = (process.env.CHATFORALL_FAMILY_CODE || "").trim();
-  const clean = (candidate || "").trim();
-  if (!configured || !clean) return false;
-  const expected = Buffer.from(configured, "utf8");
-  const actual = Buffer.from(clean, "utf8");
-  return expected.length === actual.length && crypto3.timingSafeEqual(expected, actual);
-}
 
 // server/routers/calls.ts
 import { TRPCError as TRPCError3 } from "@trpc/server";
@@ -1285,9 +1761,12 @@ var appRouter = router({
     localLogin: publicProcedure.input(z6.object({
       name: z6.string().trim().min(2).max(120),
       email: z6.string().trim().email().max(320),
-      familyCode: z6.string().optional()
+      familyCode: z6.string().optional(),
+      password: z6.string().optional(),
+      nickname: z6.string().optional(),
+      inviteBy: z6.string().optional()
     })).mutation(async ({ ctx, input }) => {
-      const user = await upsertLocalUser({ name: input.name, email: input.email });
+      const user = await upsertLocalUser({ name: input.name, email: input.email, nickname: input.nickname });
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
@@ -1307,15 +1786,42 @@ var appRouter = router({
     }),
     resetAllData: publicProcedure.mutation(async () => {
       const dbInstance = await requireDatabase();
-      try { await dbInstance.delete(callSignals); } catch {}
-      try { await dbInstance.delete(calls); } catch {}
-      try { await dbInstance.delete(typingStates); } catch {}
-      try { await dbInstance.delete(messageStatuses); } catch {}
-      try { await dbInstance.delete(messageDeletions); } catch {}
-      try { await dbInstance.delete(messages); } catch {}
-      try { await dbInstance.delete(conversationMembers); } catch {}
-      try { await dbInstance.delete(conversations); } catch {}
-      try { await dbInstance.delete(users); } catch {}
+      try {
+        await dbInstance.delete(callSignals);
+      } catch {
+      }
+      try {
+        await dbInstance.delete(calls);
+      } catch {
+      }
+      try {
+        await dbInstance.delete(typingStates);
+      } catch {
+      }
+      try {
+        await dbInstance.delete(messageStatuses);
+      } catch {
+      }
+      try {
+        await dbInstance.delete(messageDeletions);
+      } catch {
+      }
+      try {
+        await dbInstance.delete(messages);
+      } catch {
+      }
+      try {
+        await dbInstance.delete(conversationMembers);
+      } catch {
+      }
+      try {
+        await dbInstance.delete(conversations);
+      } catch {
+      }
+      try {
+        await dbInstance.delete(users);
+      } catch {
+      }
       return { success: true };
     }),
     logout: publicProcedure.mutation(({ ctx }) => {
@@ -1347,7 +1853,6 @@ async function createContext(opts) {
 
 // api/serverless.ts
 var app = express();
-app.set("trust proxy", 1);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
@@ -1361,81 +1866,39 @@ app.get("/api/calls/ice", async (req, res) => {
       res.json({ servers: [{ urls: process.env.STUN_SERVER || "stun:stun.l.google.com:19302" }] });
       return;
     }
-    const ttl = Math.min(Math.max(Number(process.env.TURN_CREDENTIAL_TTL || 3600), 300), 86400);
-    const expires = Math.floor(Date.now() / 1e3) + ttl;
-    const username = `${expires}:${user.id}`;
-    const credential = crypto4.createHmac("sha1", sharedSecret).update(username).digest("base64");
+    const username = `${Math.floor(Date.now() / 1e3) + 24 * 3600}:${user.id}`;
+    const credential = crypto3.createHmac("sha1", sharedSecret).update(username).digest("base64");
     res.json({
       servers: [
         { urls: process.env.STUN_SERVER || "stun:stun.l.google.com:19302" },
-        { urls: turnServer, username, credential }
-      ],
-      expiresAt: expires * 1e3
+        { urls: `turn:${turnServer}`, username, credential }
+      ]
     });
-  } catch {
-    res.status(401).json({ error: "unauthorized" });
+  } catch (error) {
+    res.status(401).json({ error: "Unauthorized" });
   }
 });
-app.get("/api/realtime", async (req, res) => {
+app.get("/api/realtime/stream", async (req, res) => {
   try {
     const user = await sdk.authenticateRequest(req);
-    res.status(200).set({
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no"
-    });
-    res.flushHeaders();
-    res.write(`data: ${JSON.stringify({ type: "connected", at: Date.now() })}
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders?.();
+    const unsubscribe = subscribeRealtime(user.id, (data) => {
+      res.write(`data: ${JSON.stringify(data)}
 
 `);
-    const unsubscribe = subscribeRealtime(
-      user.id,
-      (event) => res.write(`data: ${JSON.stringify(event)}
-
-`)
-    );
-    const heartbeat = setInterval(() => res.write(`: heartbeat ${Date.now()}
-
-`), 15e3);
+    });
+    const heartbeat = setInterval(() => {
+      res.write(": heartbeat\n\n");
+    }, 15e3);
     req.on("close", () => {
       clearInterval(heartbeat);
       unsubscribe();
     });
   } catch {
     res.status(401).json({ error: "unauthorized" });
-  }
-});
-app.get(["/manus-storage/*", "/api/storage/*", "/api/manus-storage/*"], async (req, res) => {
-  const rawKey = req.params[0] || "";
-  const key = rawKey.replace(/^\/+/, "");
-  if (!key) {
-    return res.status(400).send("Missing storage key");
-  }
-  if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-    console.error("[StorageProxy] Forge not configured");
-    return res.status(500).send("Storage proxy not configured");
-  }
-  try {
-    const forgeUrl = new URL("v1/storage/presign/get", ENV.forgeApiUrl.replace(/\/+$/, "") + "/");
-    forgeUrl.searchParams.set("path", key);
-    const forgeResp = await fetch(forgeUrl, {
-      headers: { Authorization: `Bearer ${ENV.forgeApiKey}` }
-    });
-    if (!forgeResp.ok) {
-      const errText = await forgeResp.text().catch(() => "");
-      console.error("[StorageProxy] Forge presign failed:", forgeResp.status, errText);
-      return res.status(502).send("Storage backend error");
-    }
-    const { url } = await forgeResp.json();
-    if (!url) {
-      return res.status(502).send("Empty signed URL");
-    }
-    res.set("Cache-Control", "public, max-age=86400, s-maxage=86400");
-    return res.redirect(307, url);
-  } catch (err) {
-    console.error("[StorageProxy] error:", err);
-    return res.status(502).send("Storage proxy error");
   }
 });
 app.use(

@@ -31,8 +31,11 @@ export const appRouter = router({
       name: z.string().trim().min(2).max(120),
       email: z.string().trim().email().max(320),
       familyCode: z.string().optional(),
+      password: z.string().optional(),
+      nickname: z.string().optional(),
+      inviteBy: z.string().optional(),
     })).mutation(async ({ ctx, input }) => {
-      const user = await db.upsertLocalUser({ name: input.name, email: input.email });
+      const user = await db.upsertLocalUser({ name: input.name, email: input.email, nickname: input.nickname });
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
