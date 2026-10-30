@@ -27,6 +27,21 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    debugQuery: publicProcedure.query(async () => {
+      const database = await db.requireDatabase();
+      try {
+        const res = await database.select().from(users).limit(1);
+        return { ok: true, res };
+      } catch (err: any) {
+        return {
+          ok: false,
+          message: err.message,
+          code: err.code,
+          sqlMessage: err.sqlMessage || err.cause?.sqlMessage || err.cause?.message,
+          cause: String(err.cause || err),
+        };
+      }
+    }),
     localLogin: publicProcedure.input(z.object({
       name: z.string().trim().min(2).max(120),
       email: z.string().trim().email().max(320),
