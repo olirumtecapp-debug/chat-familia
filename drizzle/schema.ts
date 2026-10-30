@@ -10,6 +10,7 @@ export const users = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     openId: varchar("openId", { length: 64 }).notNull().unique(),
     name: varchar("name", { length: 120 }),
+    nickname: varchar("nickname", { length: 64 }).unique(),
     email: varchar("email", { length: 320 }).unique(),
     avatarKey: varchar("avatarKey", { length: 512 }),
     avatarUrl: varchar("avatarUrl", { length: 1024 }),

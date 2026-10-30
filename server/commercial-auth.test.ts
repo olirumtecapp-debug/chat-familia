@@ -66,7 +66,7 @@ describe("Commercial Auth End-to-End", () => {
     const son = await caller.auth.localLogin({
       name: "Filho Silva",
       email: "filho@gmail.com",
-      nickname: "@filhosilva",
+      nickname: "@olirumfilho",
       password: "sonpassword123",
       inviteBy: "@olirumpai",
     });

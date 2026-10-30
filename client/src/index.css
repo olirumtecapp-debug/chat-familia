@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #07152b;
@@ -10,10 +12,13 @@
   --popover-foreground: #07152b;
   --bg: #f4f7fc;
   --surface: #ffffff;
-  --surface-soft: #edf4fc;
+  --surface-soft: #f1f5f9;
   --line: #e2e8f0;
   --ink: #07152b;
   --muted: #64748b;
+  --input-bg: #f8fafc;
+  --input-border: #cbd5e1;
+  --input-text: #0f172a;
   --accent: #0080ea;
   --accent-deep: #0060b8;
   --accent-soft: #e5f2ff;
@@ -37,6 +42,9 @@
   --line: #1c2b44;
   --ink: #f8fafc;
   --muted: #94a3b8;
+  --input-bg: #142034;
+  --input-border: #1e2f4d;
+  --input-text: #f8fafc;
   --accent: #0080ea;
   --accent-deep: #38bdf8;
   --accent-soft: #0d223f;
@@ -64,6 +72,29 @@ h1, h2, h3, .font-serif {
 button, input, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .55; }
+
+/* Harmonização Total de Inputs & Formulários */
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+textarea {
+  background-color: var(--input-bg) !important;
+  color: var(--input-text) !important;
+  border: 1px solid var(--input-border) !important;
+  border-radius: 14px !important;
+  font-family: inherit;
+  transition: all 0.2s ease !important;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):focus,
+textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(0, 128, 234, 0.18) !important;
+  outline: none !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--muted) !important;
+  opacity: 0.75;
+}
 .mobile-only { display: none; }
 .app-shell { height: 100vh; display: flex; overflow: hidden; background: var(--bg); }
 
@@ -647,33 +678,37 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .stage-art span:nth-child(3) { right: -15px; bottom: -30px; }
 .stage-art span:nth-child(4) { right: 14px; top: 5px; width: 20px; height: 20px; }
 
-.profile-dialog {
+.profile-dialog,
+.new-chat-dialog {
   max-height: 90vh;
   overflow: auto;
   background: var(--surface) !important;
   color: var(--ink) !important;
   border: 1px solid var(--line) !important;
-  box-shadow: var(--shadow) !important;
-  border-radius: 24px !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.35) !important;
+  border-radius: 28px !important;
   padding: 24px !important;
 }
-.profile-hero { display: flex; align-items: center; gap: 14px; padding: 14px; background: var(--surface-soft); border-radius: 16px; }
+.profile-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px;
+  background: var(--surface-soft) !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 20px !important;
+  color: var(--ink) !important;
+}
+.profile-hero strong { color: var(--ink) !important; }
+.profile-hero span { color: var(--muted) !important; }
 .profile-avatar { width: 62px; height: 62px; border-radius: 20px; }
 .profile-hero > div { display: grid; gap: 2px; }
-.profile-hero span { font-size: 0.8rem; color: var(--muted); }
-.profile-actions { display: flex; gap: 6px; align-items: center; }
-.profile-actions .button { font-size: 0.78rem; }
+.profile-actions { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+.profile-actions .button { font-size: 0.82rem; }
 
-.new-chat-dialog {
-  max-height: 75vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--surface) !important;
-  backdrop-filter: none !important;
-}
-.search-field { position: relative; }
-.search-field svg { position: absolute; left: 12px; top: 12px; color: var(--muted); width: 17px; }
-.search-field input { padding-left: 36px; }
+.search-field { position: relative; width: 100%; margin: 8px 0; }
+.search-field svg { position: absolute; left: 14px; top: 13px; color: var(--accent); width: 18px; height: 18px; }
+.search-field input { padding-left: 42px !important; height: 44px !important; border-radius: 14px !important; }
 
 .people-results { overflow: auto; min-height: 80px; }
 .person-row {

@@ -42,6 +42,7 @@ var users = mysqlTable(
     id: int("id").autoincrement().primaryKey(),
     openId: varchar("openId", { length: 64 }).notNull().unique(),
     name: varchar("name", { length: 120 }),
+    nickname: varchar("nickname", { length: 64 }).unique(),
     email: varchar("email", { length: 320 }).unique(),
     avatarKey: varchar("avatarKey", { length: 512 }),
     avatarUrl: varchar("avatarUrl", { length: 1024 }),
@@ -193,6 +194,38 @@ function getInitialStore() {
         lastSeen: now,
         loginMethod: "commercial-auth",
         role: "admin",
+        createdAt: now,
+        updatedAt: now,
+        lastSignedIn: now
+      },
+      {
+        id: 3,
+        openId: "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a",
+        name: "Esposa Silva",
+        email: "esposa@gmail.com",
+        nickname: "@esposasilva",
+        avatarKey: null,
+        avatarUrl: null,
+        status: "Dispon\xEDvel \u2764\uFE0F",
+        lastSeen: now,
+        loginMethod: "commercial-auth",
+        role: "user",
+        createdAt: now,
+        updatedAt: now,
+        lastSignedIn: now
+      },
+      {
+        id: 4,
+        openId: "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b",
+        name: "Filho Silva",
+        email: "filho@gmail.com",
+        nickname: "@olirumfilho",
+        avatarKey: null,
+        avatarUrl: null,
+        status: "Dispon\xEDvel \u{1F3AE}",
+        lastSeen: now,
+        loginMethod: "commercial-auth",
+        role: "user",
         createdAt: now,
         updatedAt: now,
         lastSignedIn: now
@@ -664,13 +697,13 @@ async function upsertLocalUser(input) {
     const existing = await getUserByEmail(email);
     const db = await getDb();
     if (existing) {
-      await db.update(users).set({ name, lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date(), loginMethod: "commercial-auth" }).where(eq(users.id, existing.id));
+      await db.update(users).set({ name, ...input.nickname ? { nickname: input.nickname } : {}, lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date(), loginMethod: "commercial-auth" }).where(eq(users.id, existing.id));
       const refreshed = await getUserByEmail(email);
       return refreshed || existing;
     }
     const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
     const now = /* @__PURE__ */ new Date();
-    await db.insert(users).values({ openId, name, email, loginMethod: "commercial-auth", lastSignedIn: now, lastSeen: now }).onDuplicateKeyUpdate({ set: { name, lastSignedIn: now, lastSeen: now, loginMethod: "commercial-auth" } });
+    await db.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: now, lastSeen: now }).onDuplicateKeyUpdate({ set: { name, ...input.nickname ? { nickname: input.nickname } : {}, lastSignedIn: now, lastSeen: now, loginMethod: "commercial-auth" } });
     try {
       const createdUser = await getUserByOpenId(openId);
       if (createdUser) {
@@ -690,11 +723,11 @@ async function upsertLocalUser(input) {
     const mock = getMockDb();
     const existing = await mock.select().from(users).where(eq(users.email, email)).limit(1);
     if (existing[0]) {
-      await mock.update(users).set({ name, lastSignedIn: /* @__PURE__ */ new Date() }).where(eq(users.id, existing[0].id));
-      return existing[0];
+      await mock.update(users).set({ name, ...input.nickname ? { nickname: input.nickname } : {}, lastSignedIn: /* @__PURE__ */ new Date() }).where(eq(users.id, existing[0].id));
+      return { ...existing[0], name, ...input.nickname ? { nickname: input.nickname } : {} };
     }
     const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
-    await mock.insert(users).values({ openId, name, email, loginMethod: "commercial-auth", lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date() });
+    await mock.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date() });
     const user = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
     return user[0];
   }
@@ -1066,6 +1099,8 @@ function registerStorageProxy(app2) {
 }
 
 // server/routers.ts
+import { eq as eq6 } from "drizzle-orm";
+import { TRPCError as TRPCError7 } from "@trpc/server";
 import { z as z6 } from "zod";
 
 // server/_core/systemRouter.ts
@@ -1680,7 +1715,8 @@ import { z as z5 } from "zod";
 var profileInput = z5.object({
   name: z5.string().trim().min(2, "Informe um nome com pelo menos 2 caracteres.").max(120),
   email: z5.string().trim().toLowerCase().email("Informe um e-mail v\xE1lido.").max(320),
-  status: z5.string().trim().max(280).optional()
+  status: z5.string().trim().max(280).optional(),
+  nickname: z5.string().trim().optional()
 });
 function isOnline(lastSeen) {
   return Date.now() - lastSeen.getTime() < 7e4;
@@ -1695,10 +1731,35 @@ var profileRouter = router({
   }),
   update: protectedProcedure.input(profileInput).mutation(async ({ ctx, input }) => {
     const db = await requireDatabase();
+    let formattedNick = void 0;
+    if (input.nickname !== void 0) {
+      const clean = input.nickname.toLowerCase().replace(/[^a-z0-9_]/g, "");
+      if (clean) {
+        formattedNick = `@${clean}`;
+        const existing = await db.select({ id: users.id, email: users.email }).from(users).where(eq5(users.nickname, formattedNick)).limit(1);
+        if (existing[0] && existing[0].id !== ctx.user.id) {
+          const suggestions = [`${formattedNick}1`, `${formattedNick}2026`, `${formattedNick}_`];
+          throw new TRPCError6({
+            code: "CONFLICT",
+            message: `O apelido ${formattedNick} j\xE1 est\xE1 em uso! Que tal ${suggestions.join(" ou ")}?`
+          });
+        }
+      }
+    }
     try {
-      await db.update(users).set({ ...input, lastSeen: /* @__PURE__ */ new Date() }).where(eq5(users.id, ctx.user.id));
+      const updateData = {
+        name: input.name,
+        email: input.email,
+        status: input.status,
+        lastSeen: /* @__PURE__ */ new Date()
+      };
+      if (formattedNick !== void 0) {
+        updateData.nickname = formattedNick;
+      }
+      await db.update(users).set(updateData).where(eq5(users.id, ctx.user.id));
     } catch (error) {
-      const message = error instanceof Error && /duplicate|unique/i.test(error.message) ? "Este e-mail j\xE1 est\xE1 em uso." : "N\xE3o foi poss\xEDvel salvar o perfil.";
+      if (error instanceof TRPCError6) throw error;
+      const message = error instanceof Error && /duplicate|unique/i.test(error.message) ? "Este e-mail ou apelido j\xE1 est\xE1 em uso." : "N\xE3o foi poss\xEDvel salvar o perfil.";
       throw new TRPCError6({ code: "CONFLICT", message });
     }
     return { success: true };
@@ -1724,10 +1785,28 @@ var profileRouter = router({
     const rawQuery = (input.query || "").trim();
     let whereClause = ne4(users.id, ctx.user.id);
     if (rawQuery.length > 0) {
-      const term = `%${rawQuery.replace(/[%_\\]/g, "\\$&")}%`;
-      whereClause = and4(ne4(users.id, ctx.user.id), or2(like(users.name, term), like(users.email, term)));
+      const cleanTerm = rawQuery.replace(/^@/, "");
+      const term = `%${cleanTerm.replace(/[%_\\]/g, "\\$&")}%`;
+      const rawTerm = `%${rawQuery.replace(/[%_\\]/g, "\\$&")}%`;
+      whereClause = and4(
+        ne4(users.id, ctx.user.id),
+        or2(
+          like(users.name, term),
+          like(users.email, term),
+          like(users.nickname, term),
+          like(users.nickname, rawTerm)
+        )
+      );
     }
-    const results = await db.select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(users).where(whereClause).orderBy(desc3(users.lastSeen)).limit(50);
+    const results = await db.select({
+      id: users.id,
+      name: users.name,
+      nickname: users.nickname,
+      email: users.email,
+      avatarUrl: users.avatarUrl,
+      status: users.status,
+      lastSeen: users.lastSeen
+    }).from(users).where(whereClause).orderBy(desc3(users.lastSeen)).limit(50);
     return results.map((user) => ({ ...user, online: isOnline(user.lastSeen) }));
   })
 });
@@ -1737,6 +1816,42 @@ var appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+    checkNickname: publicProcedure.input(z6.object({ nickname: z6.string().trim(), currentUserId: z6.number().optional() })).mutation(async ({ input }) => {
+      const clean = input.nickname.toLowerCase().replace(/[^a-z0-9_]/g, "");
+      if (!clean || clean.length < 2) {
+        return { available: false, message: "O apelido deve ter pelo menos 2 caracteres.", suggestions: [] };
+      }
+      const withAt = `@${clean}`;
+      const dbInstance = await requireDatabase();
+      const existing = await dbInstance.select({ id: users.id, email: users.email }).from(users).where(eq6(users.nickname, withAt)).limit(1);
+      if (existing && existing.length > 0) {
+        if (input.currentUserId && existing[0].id === input.currentUserId) {
+          return {
+            available: true,
+            nickname: withAt,
+            message: `Este j\xE1 \xE9 o seu apelido atual.`,
+            suggestions: []
+          };
+        }
+        const suggestions = [
+          `@${clean}1`,
+          `@${clean}2026`,
+          `@${clean}_`,
+          `@${clean}_real`
+        ];
+        return {
+          available: false,
+          message: `O apelido ${withAt} j\xE1 est\xE1 em uso.`,
+          suggestions
+        };
+      }
+      return {
+        available: true,
+        nickname: withAt,
+        message: `Apelido ${withAt} dispon\xEDvel!`,
+        suggestions: []
+      };
+    }),
     localLogin: publicProcedure.input(z6.object({
       name: z6.string().trim().min(2).max(120),
       email: z6.string().trim().email().max(320),
@@ -1745,7 +1860,24 @@ var appRouter = router({
       nickname: z6.string().optional(),
       inviteBy: z6.string().optional()
     })).mutation(async ({ ctx, input }) => {
-      const user = await upsertLocalUser({ name: input.name, email: input.email, nickname: input.nickname });
+      const email = input.email.trim().toLowerCase();
+      let formattedNick = void 0;
+      if (input.nickname) {
+        const clean = input.nickname.toLowerCase().replace(/[^a-z0-9_]/g, "");
+        if (clean) {
+          formattedNick = `@${clean}`;
+          const dbInstance = await requireDatabase();
+          const existing = await dbInstance.select({ id: users.id, email: users.email }).from(users).where(eq6(users.nickname, formattedNick)).limit(1);
+          if (existing[0] && existing[0].email?.toLowerCase() !== email) {
+            const suggestions = [`${formattedNick}1`, `${formattedNick}2026`, `${formattedNick}_`];
+            throw new TRPCError7({
+              code: "CONFLICT",
+              message: `O apelido ${formattedNick} j\xE1 est\xE1 em uso! Que tal ${suggestions.join(" ou ")}?`
+            });
+          }
+        }
+      }
+      const user = await upsertLocalUser({ name: input.name, email, nickname: formattedNick });
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });

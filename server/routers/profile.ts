@@ -10,6 +10,7 @@ const profileInput = z.object({
   name: z.string().trim().min(2, "Informe um nome com pelo menos 2 caracteres.").max(120),
   email: z.string().trim().toLowerCase().email("Informe um e-mail válido.").max(320),
   status: z.string().trim().max(280).optional(),
+  nickname: z.string().trim().optional(),
 });
 
 function isOnline(lastSeen: Date) {
@@ -27,10 +28,42 @@ export const profileRouter = router({
 
   update: protectedProcedure.input(profileInput).mutation(async ({ ctx, input }) => {
     const db = await requireDatabase();
+    let formattedNick: string | undefined = undefined;
+
+    if (input.nickname !== undefined) {
+      const clean = input.nickname.toLowerCase().replace(/[^a-z0-9_]/g, "");
+      if (clean) {
+        formattedNick = `@${clean}`;
+        const existing = await db
+          .select({ id: users.id, email: users.email })
+          .from(users)
+          .where(eq(users.nickname as any, formattedNick))
+          .limit(1);
+
+        if (existing[0] && existing[0].id !== ctx.user.id) {
+          const suggestions = [`${formattedNick}1`, `${formattedNick}2026`, `${formattedNick}_`];
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: `O apelido ${formattedNick} já está em uso! Que tal ${suggestions.join(" ou ")}?`,
+          });
+        }
+      }
+    }
+
     try {
-      await db.update(users).set({ ...input, lastSeen: new Date() }).where(eq(users.id, ctx.user.id));
+      const updateData: any = {
+        name: input.name,
+        email: input.email,
+        status: input.status,
+        lastSeen: new Date(),
+      };
+      if (formattedNick !== undefined) {
+        updateData.nickname = formattedNick;
+      }
+      await db.update(users).set(updateData).where(eq(users.id, ctx.user.id));
     } catch (error) {
-      const message = error instanceof Error && /duplicate|unique/i.test(error.message) ? "Este e-mail já está em uso." : "Não foi possível salvar o perfil.";
+      if (error instanceof TRPCError) throw error;
+      const message = error instanceof Error && /duplicate|unique/i.test(error.message) ? "Este e-mail ou apelido já está em uso." : "Não foi possível salvar o perfil.";
       throw new TRPCError({ code: "CONFLICT", message });
     }
     return { success: true };
@@ -64,11 +97,29 @@ export const profileRouter = router({
       const rawQuery = (input.query || "").trim();
       let whereClause: any = ne(users.id, ctx.user.id);
       if (rawQuery.length > 0) {
-        const term = `%${rawQuery.replace(/[%_\\]/g, "\\$&")}%`;
-        whereClause = and(ne(users.id, ctx.user.id), or(like(users.name, term), like(users.email, term)));
+        const cleanTerm = rawQuery.replace(/^@/, "");
+        const term = `%${cleanTerm.replace(/[%_\\]/g, "\\$&")}%`;
+        const rawTerm = `%${rawQuery.replace(/[%_\\]/g, "\\$&")}%`;
+        whereClause = and(
+          ne(users.id, ctx.user.id),
+          or(
+            like(users.name, term),
+            like(users.email, term),
+            like(users.nickname, term),
+            like(users.nickname, rawTerm)
+          )
+        );
       }
       const results = await db
-        .select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen })
+        .select({
+          id: users.id,
+          name: users.name,
+          nickname: users.nickname,
+          email: users.email,
+          avatarUrl: users.avatarUrl,
+          status: users.status,
+          lastSeen: users.lastSeen,
+        })
         .from(users)
         .where(whereClause)
         .orderBy(desc(users.lastSeen))

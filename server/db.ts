@@ -102,14 +102,14 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     const db = await getDb();
 
     if (existing) {
-      await db.update(users).set({ name, lastSignedIn: new Date(), lastSeen: new Date(), loginMethod: "commercial-auth" }).where(eq(users.id, existing.id));
+      await db.update(users).set({ name, ...(input.nickname ? { nickname: input.nickname } : {}), lastSignedIn: new Date(), lastSeen: new Date(), loginMethod: "commercial-auth" }).where(eq(users.id, existing.id));
       const refreshed = await getUserByEmail(email);
       return refreshed || existing;
     }
 
     const openId = `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
     const now = new Date();
-    await db.insert(users).values({ openId, name, email, loginMethod: "commercial-auth", lastSignedIn: now, lastSeen: now }).onDuplicateKeyUpdate({ set: { name, lastSignedIn: now, lastSeen: now, loginMethod: "commercial-auth" } });
+    await db.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: now, lastSeen: now }).onDuplicateKeyUpdate({ set: { name, ...(input.nickname ? { nickname: input.nickname } : {}), lastSignedIn: now, lastSeen: now, loginMethod: "commercial-auth" } });
     
     // Auto join default family group
     try {
@@ -131,11 +131,11 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     const mock = getMockDb();
     const existing = await mock.select().from(users).where(eq(users.email, email)).limit(1);
     if (existing[0]) {
-      await mock.update(users).set({ name, lastSignedIn: new Date() }).where(eq(users.id, existing[0].id));
-      return existing[0];
+      await mock.update(users).set({ name, ...(input.nickname ? { nickname: input.nickname } : {}), lastSignedIn: new Date() }).where(eq(users.id, existing[0].id));
+      return { ...existing[0], name, ...(input.nickname ? { nickname: input.nickname } : {}) };
     }
     const openId = `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
-    await mock.insert(users).values({ openId, name, email, loginMethod: "commercial-auth", lastSignedIn: new Date(), lastSeen: new Date() });
+    await mock.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: new Date(), lastSeen: new Date() });
     const user = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
     return user[0];
   }

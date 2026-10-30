@@ -122,6 +122,37 @@ function Welcome() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [nickStatus, setNickStatus] = useState<{
+    checking: boolean;
+    available?: boolean;
+    message?: string;
+    suggestions: string[];
+  }>({ checking: false, suggestions: [] });
+
+  const checkNick = trpc.auth.checkNickname.useMutation();
+
+  useEffect(() => {
+    const clean = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+    if (!clean || clean.length < 2) {
+      setNickStatus({ checking: false, suggestions: [] });
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setNickStatus(prev => ({ ...prev, checking: true }));
+      try {
+        const res = await checkNick.mutateAsync({ nickname: clean });
+        setNickStatus({
+          checking: false,
+          available: res.available,
+          message: res.message,
+          suggestions: res.suggestions || [],
+        });
+      } catch {
+        setNickStatus({ checking: false, suggestions: [] });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [username]);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -131,6 +162,9 @@ function Welcome() {
       const cleanEmail = email.trim();
       if (!cleanName) return toast.error("Informe seu nome.");
       if (!cleanEmail) return toast.error("Informe seu e-mail.");
+      if (cleanUsername && nickStatus.available === false) {
+        return toast.error("O apelido escolhido já está em uso! Escolha uma das sugestões.");
+      }
 
       const finalEmail = cleanEmail.includes("@") ? cleanEmail : `${cleanUsername || cleanName.toLowerCase().replace(/\s+/g, "")}@chat.creativeam.com.br`;
       login.mutate({ name: cleanName, email: finalEmail, nickname: cleanUsername, password: password || undefined, inviteBy: invitedBy || undefined });
@@ -197,19 +231,58 @@ function Welcome() {
                 placeholder="Seu nome completo"
                 autoComplete="name"
                 required
-                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
               />
             </div>
 
-            <div className="relative flex items-center">
-              <AtSign className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
-              <input
-                value={username}
-                onChange={event => setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
-                placeholder="Apelido único (ex: @seu_nome)"
-                autoComplete="username"
-                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
-              />
+            <div className="space-y-1">
+              <div className="relative flex items-center">
+                <AtSign className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  value={username}
+                  onChange={event => setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  placeholder="Apelido único (ex: @seu_nome)"
+                  autoComplete="username"
+                  className="w-full h-12 pl-10 pr-3 rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+                />
+              </div>
+              {username.trim().length >= 2 && (
+                <div className="text-left px-1 pt-0.5">
+                  {nickStatus.checking ? (
+                    <span className="text-[11px] text-[var(--muted)] flex items-center gap-1">
+                      <Loader2 className="w-3 h-3 animate-spin text-[#0080EA]" /> Verificando disponibilidade...
+                    </span>
+                  ) : nickStatus.available ? (
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                      <Check className="w-3.5 h-3.5" /> @{username} está livre e disponível!
+                    </span>
+                  ) : nickStatus.available === false ? (
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 space-y-1.5 mt-1">
+                      <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold flex items-center gap-1">
+                        ⚠️ Este apelido já está em uso por outro membro.
+                      </p>
+                      {nickStatus.suggestions.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          <span className="text-[10px] text-[var(--muted)]">Toque para escolher:</span>
+                          {nickStatus.suggestions.map((sug) => {
+                            const cleanSug = sug.replace(/^@/, "");
+                            return (
+                              <button
+                                key={sug}
+                                type="button"
+                                onClick={() => setUsername(cleanSug)}
+                                className="px-2 py-0.5 rounded-lg bg-[#0080EA]/15 hover:bg-[#0080EA]/25 text-[#0080EA] dark:text-[#38BDF8] text-[11px] font-bold font-mono transition-colors cursor-pointer border border-[#0080EA]/30"
+                              >
+                                @{cleanSug}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             <div className="relative flex items-center">
@@ -221,7 +294,7 @@ function Welcome() {
                 type="email"
                 autoComplete="email"
                 required
-                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
               />
             </div>
 
@@ -233,7 +306,7 @@ function Welcome() {
                 placeholder="Criar senha de acesso (opcional)"
                 type="password"
                 autoComplete="new-password"
-                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
               />
             </div>
 
@@ -256,7 +329,7 @@ function Welcome() {
                 placeholder="Seu e-mail ou @apelido"
                 autoComplete="email"
                 required
-                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
               />
             </div>
 
@@ -268,7 +341,7 @@ function Welcome() {
                 placeholder="Sua senha de acesso"
                 type="password"
                 autoComplete="current-password"
-                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
               />
             </div>
 
@@ -356,15 +429,50 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
     onError: error => toast.error(error.message),
   });
   const [name, setName] = useState(profile?.name || "");
+  const [nickname, setNickname] = useState((profile?.nickname || "").replace(/^@/, ""));
   const [email, setEmail] = useState(profile?.email || "");
   const [status, setStatus] = useState(profile?.status || "Disponível");
+  const [nickStatus, setNickStatus] = useState<{
+    checking: boolean;
+    available?: boolean;
+    message?: string;
+    suggestions: string[];
+  }>({ checking: false, suggestions: [] });
+
+  const checkNick = trpc.auth.checkNickname.useMutation();
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setName(profile?.name || "");
+    setNickname((profile?.nickname || "").replace(/^@/, ""));
     setEmail(profile?.email || "");
     setStatus(profile?.status || "Disponível");
+    setNickStatus({ checking: false, suggestions: [] });
   }, [profile]);
+
+  useEffect(() => {
+    const clean = nickname.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+    const initialClean = (profile?.nickname || "").replace(/^@/, "").toLowerCase();
+    if (!clean || clean.length < 2 || clean === initialClean) {
+      setNickStatus({ checking: false, suggestions: [] });
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setNickStatus(prev => ({ ...prev, checking: true }));
+      try {
+        const res = await checkNick.mutateAsync({ nickname: clean, currentUserId: profile?.id });
+        setNickStatus({
+          checking: false,
+          available: res.available,
+          message: res.message,
+          suggestions: res.suggestions || [],
+        });
+      } catch {
+        setNickStatus({ checking: false, suggestions: [] });
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [nickname, profile?.id, profile?.nickname]);
 
   const upload = async (file?: File) => {
     if (!file) return;
@@ -378,22 +486,29 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="profile-dialog sm:max-w-md bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-slate-900 dark:text-slate-100 shadow-2xl rounded-2xl p-6">
+      <DialogContent className="profile-dialog sm:max-w-md bg-[var(--surface)] border border-[var(--line)] text-[var(--ink)] shadow-2xl rounded-3xl p-6">
         <DialogHeader className="space-y-1">
-          <DialogTitle className="text-xl font-bold text-slate-900 dark:text-white">Meu Perfil</DialogTitle>
-          <DialogDescription className="text-sm text-slate-500 dark:text-slate-400">
-            Atualize seu nome, foto e status para que sua família reconheça você.
+          <DialogTitle className="text-xl font-bold text-[var(--ink)]">Meu Perfil</DialogTitle>
+          <DialogDescription className="text-sm text-[var(--muted)]">
+            Atualize suas informações para que sua família encontre você com facilidade.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center gap-4 p-4 rounded-2xl bg-slate-50 dark:bg-[#142034] border border-slate-200 dark:border-slate-800 my-2">
-          <Avatar name={profile?.name} url={profile?.avatarUrl} className="w-16 h-16 rounded-2xl border-2 border-[#0080EA] shadow-sm" />
+        <div className="flex items-center gap-4 p-4 rounded-2xl bg-[var(--surface-soft)] border border-[var(--line)] my-2">
+          <Avatar name={profile?.name} url={profile?.avatarUrl} className="w-16 h-16 rounded-2xl border-2 border-[#0080EA] shadow-sm shrink-0" />
           <div className="flex-1 min-w-0">
-            <strong className="block text-base font-semibold truncate text-slate-900 dark:text-white">
-              {profile?.name || "Seu perfil"}
-            </strong>
-            <span className="block text-xs text-slate-500 dark:text-slate-400 truncate">{profile?.email}</span>
-            <span className="inline-block mt-1 text-[11px] font-medium text-[#0080EA] bg-[#0080EA]/10 dark:bg-[#0080EA]/20 px-2.5 py-0.5 rounded-full">
+            <div className="flex items-center gap-2 flex-wrap">
+              <strong className="block text-base font-semibold truncate text-[var(--ink)]">
+                {profile?.name || "Seu perfil"}
+              </strong>
+              {profile?.nickname && (
+                <span className="text-xs font-mono font-medium text-[#0080EA] bg-[#0080EA]/10 px-2 py-0.5 rounded-full shrink-0">
+                  {profile.nickname.startsWith("@") ? profile.nickname : `@${profile.nickname}`}
+                </span>
+              )}
+            </div>
+            <span className="block text-xs text-[var(--muted)] truncate mt-0.5">{profile?.email}</span>
+            <span className="inline-block mt-1 text-[11px] font-medium text-[#0080EA] bg-[#0080EA]/10 px-2.5 py-0.5 rounded-full">
               {status || "Disponível"}
             </span>
           </div>
@@ -406,7 +521,7 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
             size="sm"
             onClick={() => fileRef.current?.click()}
             disabled={avatar.isPending}
-            className="flex-1 border-slate-300 dark:border-slate-700 hover:bg-[#0080EA]/10 font-medium"
+            className="flex-1 border-[var(--line)] hover:bg-[var(--surface-soft)] text-[var(--ink)] font-medium"
           >
             <Camera className="w-4 h-4 mr-1.5 text-[#0080EA]" /> Alterar foto
           </Button>
@@ -433,59 +548,109 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
         </div>
 
         <form
-          className="space-y-4 pt-2"
+          className="space-y-3 pt-2"
           onSubmit={event => {
             event.preventDefault();
-            update.mutate({ name, email, status });
+            if (nickStatus.available === false) {
+              toast.error("O apelido informado já está em uso por outro membro.");
+              return;
+            }
+            update.mutate({ name, email, status, nickname: nickname ? `@${nickname}` : undefined });
           }}
         >
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Nome completo</label>
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[var(--ink)] block">Nome completo</label>
             <Input
               value={name}
               onChange={event => setName(event.target.value)}
-              placeholder="Seu nome"
+              placeholder="Seu nome completo"
               required
-              className="bg-white dark:bg-[#0E1726] border-slate-300 dark:border-slate-700 text-sm"
+              className="bg-[var(--surface-soft)] border-[var(--line)] text-[var(--ink)] text-sm h-11"
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">E-mail</label>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-[var(--ink)] block">Apelido único (@)</label>
+              {nickStatus.checking ? (
+                <span className="text-[10px] text-[var(--muted)] flex items-center gap-1">
+                  <Loader2 className="w-2.5 h-2.5 animate-spin text-[#0080EA]" /> Verificando...
+                </span>
+              ) : nickStatus.available ? (
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                  <Check className="w-3 h-3" /> Disponível!
+                </span>
+              ) : nickStatus.available === false ? (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">
+                  Já em uso
+                </span>
+              ) : null}
+            </div>
+            <div className="relative flex items-center">
+              <AtSign className="absolute left-3 w-4 h-4 text-slate-400 pointer-events-none" />
+              <Input
+                value={nickname}
+                onChange={event => setNickname(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                placeholder="seu_apelido (ex: olirumpai)"
+                className="pl-8 text-sm font-mono bg-[var(--surface-soft)] border-[var(--line)] text-[var(--ink)] h-11"
+              />
+            </div>
+            {nickStatus.available === false && nickStatus.suggestions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-[var(--muted)]">Sugestões:</span>
+                {nickStatus.suggestions.map(sug => {
+                  const cleanSug = sug.replace(/^@/, "");
+                  return (
+                    <button
+                      key={sug}
+                      type="button"
+                      onClick={() => setNickname(cleanSug)}
+                      className="px-2 py-0.5 rounded-lg bg-[#0080EA]/15 hover:bg-[#0080EA]/25 text-[#0080EA] text-[11px] font-bold font-mono border border-[#0080EA]/30 cursor-pointer transition-colors"
+                    >
+                      @{cleanSug}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[var(--ink)] block">E-mail</label>
             <Input
               value={email}
               type="email"
               onChange={event => setEmail(event.target.value)}
               placeholder="seuemail@exemplo.com"
               required
-              className="bg-white dark:bg-[#0E1726] border-slate-300 dark:border-slate-700 text-sm"
+              className="bg-[var(--surface-soft)] border-[var(--line)] text-[var(--ink)] text-sm h-11"
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block">Status / Recado</label>
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-[var(--ink)] block">Status / Recado</label>
             <Textarea
               value={status}
               maxLength={280}
               onChange={event => setStatus(event.target.value)}
               placeholder="Ex: Disponível, Na estrada, Em reunião..."
               rows={2}
-              className="bg-white dark:bg-[#0E1726] border-slate-300 dark:border-slate-700 resize-none text-sm"
+              className="bg-[var(--surface-soft)] border-[var(--line)] text-[var(--ink)] resize-none text-sm"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--line)]">
             <Button
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              className="border-slate-300 dark:border-slate-700 text-xs font-medium"
+              className="border-[var(--line)] hover:bg-[var(--surface-soft)] text-[var(--ink)] text-xs font-medium"
             >
               Fechar
             </Button>
             <Button
               type="submit"
-              disabled={update.isPending}
+              disabled={update.isPending || nickStatus.available === false}
               className="bg-[#0080EA] hover:bg-[#0060B8] text-white font-medium text-xs shadow-md"
             >
               {update.isPending ? <Loader2 className="animate-spin w-3.5 h-3.5 mr-1.5" /> : null}
@@ -535,19 +700,19 @@ function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="new-chat-dialog sm:max-w-md bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-slate-900 dark:text-slate-100 shadow-2xl rounded-2xl p-6">
+      <DialogContent className="new-chat-dialog sm:max-w-md bg-[var(--surface)] border border-[var(--line)] text-[var(--ink)] shadow-2xl rounded-3xl p-6">
         <DialogHeader className="space-y-1">
-          <DialogTitle className="text-xl font-bold text-slate-900 dark:text-white">
+          <DialogTitle className="text-xl font-bold text-[var(--ink)]">
             {groupMode ? "Criar novo grupo" : "Nova conversa"}
           </DialogTitle>
-          <DialogDescription className="text-xs text-slate-500 dark:text-slate-400">
-            {groupMode ? "Escolha as pessoas da família e dê um nome ao grupo." : "Toque em qualquer pessoa abaixo para começar a conversar na hora."}
+          <DialogDescription className="text-xs text-[var(--muted)]">
+            {groupMode ? "Escolha as pessoas da família e dê um nome ao grupo." : "Localize familiares por nome, @apelido ou e-mail para conversar."}
           </DialogDescription>
         </DialogHeader>
 
         {!groupMode && (
           <div className="flex justify-end">
-            <Button variant="outline" size="sm" onClick={() => setGroupMode(true)} className="text-xs border-slate-300 dark:border-slate-700">
+            <Button variant="outline" size="sm" onClick={() => setGroupMode(true)} className="text-xs border-[var(--line)] text-[var(--ink)] hover:bg-[var(--surface-soft)]">
               <UserRoundPlus className="w-3.5 h-3.5 mr-1.5 text-[#0080EA]" /> Criar grupo familiar
             </Button>
           </div>
@@ -560,7 +725,7 @@ function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpen
                 value={title}
                 onChange={event => setTitle(event.target.value)}
                 placeholder="Nome do grupo (ex: Família)"
-                className="bg-white dark:bg-[#0E1726] text-sm"
+                className="bg-[var(--surface-soft)] border-[var(--line)] text-[var(--ink)] text-sm"
               />
               <Button
                 disabled={createGroup.isPending || selectedPeople.length < 1 || title.trim().length < 2}
@@ -580,29 +745,29 @@ function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpen
           </div>
         )}
 
-        <div className="search-field relative my-1">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+        <div className="search-field relative my-2">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3.5 pointer-events-none" />
           <Input
             autoFocus
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Pesquisar por nome ou e-mail..."
-            className="pl-9 bg-slate-50 dark:bg-[#142034] text-sm"
+            placeholder="Pesquisar por nome, @apelido ou e-mail..."
+            className="pl-9 h-11 bg-[var(--surface-soft)] border-[var(--line)] text-[var(--ink)] text-sm"
           />
         </div>
 
-        <div className="people-results overflow-y-auto max-h-[320px] divide-y divide-slate-100 dark:divide-slate-800 -mx-2 px-2">
+        <div className="people-results overflow-y-auto max-h-[320px] divide-y divide-[var(--line)] -mx-2 px-2">
           {search.isLoading && (
-            <div className="quiet-state py-8 text-center text-xs text-slate-500">
+            <div className="quiet-state py-8 text-center text-xs text-[var(--muted)]">
               <Loader2 className="animate-spin w-5 h-5 mx-auto mb-2 text-[#0080EA]" />
               Buscando contatos cadastrados...
             </div>
           )}
 
           {!search.isLoading && !search.data?.length && (
-            <div className="quiet-state py-8 text-center text-xs text-slate-500">
+            <div className="quiet-state py-8 text-center text-xs text-[var(--muted)]">
               <Users className="w-8 h-8 mx-auto mb-2 text-slate-400 opacity-60" />
-              Nenhum contato encontrado.
+              Nenhum contato encontrado com "{query}".
             </div>
           )}
 
@@ -610,30 +775,37 @@ function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpen
             <button
               type="button"
               className={cn(
-                "person-row w-full flex items-center gap-3 p-3 text-left hover:bg-slate-50 dark:hover:bg-[#142034] transition-colors rounded-xl my-1",
-                selectedPeople.includes(person.id) && "bg-[#0080EA]/10 dark:bg-[#0080EA]/20 font-semibold"
+                "person-row w-full flex items-center gap-3 p-3 text-left hover:bg-[var(--surface-soft)] transition-colors rounded-2xl my-1 cursor-pointer",
+                selectedPeople.includes(person.id) && "bg-[#0080EA]/10 font-semibold"
               )}
               key={person.id}
               onClick={() => (groupMode ? toggle(person.id) : create.mutate({ userId: person.id }))}
               disabled={create.isPending || createGroup.isPending}
             >
               <div className="relative shrink-0">
-                <Avatar name={person.name} url={person.avatarUrl} className="w-10 h-10 rounded-full" />
-                <span className={cn("presence-dot absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-[#0E1726]", person.online ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")} />
+                <Avatar name={person.name} url={person.avatarUrl} className="w-11 h-11 rounded-full shadow-sm" />
+                <span className={cn("presence-dot absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[var(--surface)]", person.online ? "bg-emerald-500" : "bg-slate-400")} />
               </div>
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <strong className="text-sm font-semibold truncate text-slate-900 dark:text-white">
-                    {person.name}
-                  </strong>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <strong className="text-sm font-semibold truncate text-[var(--ink)]">
+                      {person.name}
+                    </strong>
+                    {person.nickname && (
+                      <span className="text-[11px] font-mono font-medium text-[#0080EA] bg-[#0080EA]/10 px-2 py-0.5 rounded-full shrink-0">
+                        {person.nickname.startsWith("@") ? person.nickname : `@${person.nickname}`}
+                      </span>
+                    )}
+                  </div>
                   {!groupMode && (
-                    <span className="text-[11px] font-semibold text-[#0080EA] bg-[#0080EA]/10 dark:bg-[#0080EA]/20 px-2 py-0.5 rounded-full shrink-0 ml-2">
+                    <span className="text-[11px] font-bold text-[#0080EA] bg-[#0080EA]/10 hover:bg-[#0080EA]/20 px-2.5 py-1 rounded-xl shrink-0 ml-2 transition-colors">
                       Conversar
                     </span>
                   )}
                 </div>
-                <small className="block text-xs text-slate-500 dark:text-slate-400 truncate">
+                <small className="block text-xs text-[var(--muted)] truncate mt-0.5">
                   {person.email || person.status || "Disponível"}
                 </small>
               </div>
@@ -782,8 +954,33 @@ export default function Home() {
   return <div className="app-shell">
     <aside className={cn("sidebar", !sidebarOpen && "mobile-hidden")}>
       <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/icon-192.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Convidar amigo por link" onClick={() => setInviteModalOpen(true)} title="Convidar amigo com link pessoal"><UserPlus className="w-5 h-5 text-[#0080EA] dark:text-[#38BDF8]" /></button><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
-      <button className="account-card" onClick={() => setProfileOpen(true)}><Avatar name={profile.data.name} url={profile.data.avatarUrl} /><span><strong>{profile.data.name}</strong><small>{profile.data.status || "Disponível"}</small></span><MoreHorizontal /></button>
-      <div className="sidebar-search"><Search /><Input placeholder="Pesquisar conversas" onChange={event => { const term = event.target.value.toLowerCase(); if (!term) return; const match = conversations.data?.find(item => item.participant?.name?.toLowerCase().includes(term)); if (match) setSelectedId(match.id); }} /></div>
+      <button className="account-card" onClick={() => setProfileOpen(true)}>
+        <Avatar name={profile.data.name} url={profile.data.avatarUrl} />
+        <span className="flex-1 min-w-0 text-left">
+          <span className="flex items-center gap-1.5">
+            <strong className="truncate font-semibold text-sm">{profile.data.name}</strong>
+            {profile.data.nickname && (
+              <span className="text-[10px] font-mono font-medium text-[#0080EA] bg-[#0080EA]/10 px-1.5 py-0.5 rounded-md shrink-0">
+                {profile.data.nickname.startsWith("@") ? profile.data.nickname : `@${profile.data.nickname}`}
+              </span>
+            )}
+          </span>
+          <small className="truncate block text-xs text-[var(--muted)]">{profile.data.status || "Disponível"}</small>
+        </span>
+        <MoreHorizontal className="shrink-0 text-[var(--muted)]" />
+      </button>
+      <div className="sidebar-search"><Search /><Input placeholder="Pesquisar por nome ou @apelido" onChange={event => {
+        const raw = event.target.value.toLowerCase().trim();
+        const term = raw.startsWith("@") ? raw.slice(1) : raw;
+        if (!term) return;
+        const match = conversations.data?.find(item => {
+          const nameMatch = item.participant?.name?.toLowerCase().includes(term);
+          const nickMatch = (item.participant as any)?.nickname?.toLowerCase().includes(term);
+          const titleMatch = item.title?.toLowerCase().includes(term);
+          return nameMatch || nickMatch || titleMatch;
+        });
+        if (match) setSelectedId(match.id);
+      }} /></div>
       
       <div className="flex px-3 pt-2 pb-1 gap-2 border-b border-[var(--line)]">
         <button
@@ -883,22 +1080,29 @@ export default function Home() {
           {allContacts.data?.map(contact => (
             <button
               key={contact.id}
-              className="conversation-row hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors w-full text-left cursor-pointer"
+              className="conversation-row hover:bg-[var(--surface-soft)] transition-colors w-full text-left cursor-pointer"
               onClick={() => createDirect.mutate({ userId: contact.id })}
               disabled={createDirect.isPending}
             >
               <div className="relative shrink-0">
                 <Avatar name={contact.name} url={contact.avatarUrl} />
-                <span className={cn("presence-dot absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white dark:border-[#0E1726]", contact.online ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-600")} />
+                <span className={cn("presence-dot absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[var(--surface)]", contact.online ? "bg-emerald-500" : "bg-slate-400")} />
               </div>
               <span className="conversation-copy flex-1 min-w-0">
                 <span className="flex items-center justify-between">
-                  <strong className="truncate font-semibold text-sm text-slate-900 dark:text-white">{contact.name}</strong>
-                  <span className="text-[11px] font-semibold text-[#0080EA] bg-[#0080EA]/10 dark:bg-[#0080EA]/20 px-2 py-0.5 rounded-full shrink-0 ml-2">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <strong className="truncate font-semibold text-sm text-[var(--ink)]">{contact.name}</strong>
+                    {contact.nickname && (
+                      <span className="text-[11px] font-mono font-medium text-[#0080EA] bg-[#0080EA]/10 px-1.5 py-0.5 rounded-md shrink-0">
+                        {contact.nickname.startsWith("@") ? contact.nickname : `@${contact.nickname}`}
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[11px] font-bold text-[#0080EA] bg-[#0080EA]/10 hover:bg-[#0080EA]/20 px-2 py-0.5 rounded-full shrink-0 ml-2 transition-colors">
                     Conversar
                   </span>
                 </span>
-                <small className="truncate text-xs text-muted-foreground block">{contact.email || contact.status || "Disponível"}</small>
+                <small className="truncate text-xs text-[var(--muted)] block mt-0.5">{contact.email || contact.status || "Disponível"}</small>
               </span>
             </button>
           ))}
