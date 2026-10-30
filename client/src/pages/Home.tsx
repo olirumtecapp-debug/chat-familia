@@ -11,6 +11,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CallDialog } from "@/components/CallDialog";
 import { InstallAppModal } from "@/components/InstallAppModal";
+import { DownloadApkModal } from "@/components/DownloadApkModal";
+import { InviteModal } from "@/components/InviteModal";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -18,6 +20,10 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useTheme } from "@/contexts/ThemeContext";
 import { resolveMediaUrl } from "@shared/media";
+import { getEmojiDisplayStyle } from "@/lib/emojiUtils";
+import { EmojiPicker } from "@/components/EmojiPicker";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { UserPlus } from "lucide-react";
 
 type FilePayload = { dataUrl: string; name: string; duration?: number; kind: "image" | "file" };
 type ReplyTarget = { id: number; content: string | null; senderName: string | null };
@@ -141,7 +147,7 @@ function Welcome() {
       <p className="auth-note">Use seu nome, e-mail e o código privado compartilhado pela família para entrar.</p>
     </section>
     <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
-  </main>;
+      </main>;
 }
 
 function Onboarding({ onDone }: { onDone: () => void }) {
@@ -255,7 +261,16 @@ function MessageBubble({ message, currentUserId, onReply, onDeleteMe, onDeleteAl
       {message.messageType === "image" && mediaUrl && <button className="photo-message" onClick={() => window.open(mediaUrl, "_blank", "noopener,noreferrer")}><img src={mediaUrl} alt={message.content || "Imagem enviada"} onError={event => { event.currentTarget.style.display = "none"; toast.error("Não foi possível carregar esta imagem."); }} /></button>}
       {message.messageType === "audio" && <AudioPlayer src={mediaUrl} duration={message.duration} />}
       {message.messageType === "file" && mediaUrl && <a className="document-message" href={mediaUrl} target="_blank" rel="noreferrer"><FileText /><span><strong>{message.fileName || "Documento"}</strong><small>Baixar arquivo</small></span></a>}
-      {message.content && <p>{linkify(message.content)}</p>}
+      {message.content && (() => {
+        const emojiInfo = getEmojiDisplayStyle(message.content);
+        return emojiInfo.isEmojiOnly ? (
+          <div className={`select-none text-center ${emojiInfo.sizeClass}`}>
+            {message.content}
+          </div>
+        ) : (
+          <p>{linkify(message.content)}</p>
+        );
+      })()}
       <footer><time>{formatTime(message.createdAt)}</time>{own && <Receipt status={message.receiptStatus} />}</footer>
     </div>
     <AnimatePresence>{actions && <motion.div initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="message-actions">
@@ -277,6 +292,9 @@ export default function Home() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pendingContact, setPendingContact] = useState<{ name: string } | null>(null);
   const [profileOpen, setProfileOpen] = useState(false); const [newChatOpen, setNewChatOpen] = useState(false); const [groupInfoOpen, setGroupInfoOpen] = useState(false); const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [downloadApkOpen, setDownloadApkOpen] = useState(false);
+  const [inviteModalOpen, setInviteModalOpen] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const selected = conversations.data?.find(conversation => conversation.id === selectedId) || null;
   const conversationReady = Boolean(selectedId && selected);
   const history = trpc.messaging.history.useQuery({ conversationId: selectedId || 0 }, { enabled: conversationReady, refetchInterval: 2_000 });
@@ -319,12 +337,13 @@ export default function Home() {
 
   return <div className="app-shell">
     <aside className={cn("sidebar", !sidebarOpen && "mobile-hidden")}>
-      <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/icon-192.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
+      <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/icon-192.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Convidar amigo por link" onClick={() => setInviteModalOpen(true)} title="Convidar amigo com link pessoal"><UserPlus className="w-5 h-5 text-emerald-600 dark:text-emerald-400" /></button><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
       <button className="account-card" onClick={() => setProfileOpen(true)}><Avatar name={profile.data.name} url={profile.data.avatarUrl} /><span><strong>{profile.data.name}</strong><small>{profile.data.status || "Disponível"}</small></span><MoreHorizontal /></button>
       <div className="sidebar-search"><Search /><Input placeholder="Pesquisar conversas" onChange={event => { const term = event.target.value.toLowerCase(); if (!term) return; const match = conversations.data?.find(item => item.participant?.name?.toLowerCase().includes(term)); if (match) setSelectedId(match.id); }} /></div>
       <div className="conversation-list">{conversations.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando conversas</div>}{!conversations.isLoading && !conversations.data?.length && <div className="clean-empty"><MessageCircleMore /><strong>Suas conversas começam aqui.</strong><span>Crie uma nova conversa para falar com alguém da família.</span><Button variant="outline" onClick={() => setNewChatOpen(true)}><UserRoundPlus /> Nova conversa</Button></div>}{conversations.data?.map(conversation => <button key={conversation.id} className={cn("conversation-row", selectedId === conversation.id && "active", conversation.unreadCount > 0 && "unread")} onClick={() => chooseConversation(conversation.id)}><Avatar name={conversation.participant?.name || conversation.title} url={conversation.participant?.avatarUrl} /><span className="conversation-copy"><span><strong>{conversation.participant?.name || conversation.title || "Conversa"}</strong><time>{formatTime(conversation.latestMessage?.createdAt)}</time></span><span><small>{conversation.latestMessage?.deletedAt ? "Mensagem apagada" : conversation.latestMessage?.messageType === "image" ? "Imagem" : conversation.latestMessage?.messageType === "audio" ? "Mensagem de voz" : conversation.latestMessage?.messageType === "file" ? "Documento" : conversation.latestMessage?.content || "Conversa iniciada"}</small>{conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}</span></span></button>)}</div>
       <footer className="sidebar-footer">
-        {!isInstalled && <button className="install-btn" onClick={installApp} title="Instalar aplicativo"><Download /> Instalar</button>}
+        <button className="install-btn bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20" onClick={() => setDownloadApkOpen(true)} title="Baixar APK oficial para Android"><Smartphone className="w-4 h-4" /> Baixar APK</button>
+        <button onClick={() => setInviteModalOpen(true)} title="Convidar amigos"><UserPlus className="w-4 h-4" /> Convidar</button>
         <button onClick={requestNotification}><Bell /> Notificações</button>
         <button onClick={toggleTheme}>{theme === "dark" ? <Sun /> : <Moon />} {theme === "dark" ? "Modo claro" : "Modo escuro"}</button>
         <button onClick={() => logout()}><LogOut /> Sair</button>
@@ -334,10 +353,24 @@ export default function Home() {
     <main className={cn("chat-stage", !selectedId && "no-selection")}>{!selectedId ? <section className="stage-empty"><div className="stage-art"><MessageCircleMore /><span /><span /><span /></div><p className="eyebrow">ChatForAll</p><h2>Uma conversa de cada vez.</h2><p>Selecione uma conversa ou comece uma nova quando estiver pronto.</p><Button onClick={() => setNewChatOpen(true)}><Plus /> Nova conversa</Button></section> : <>
       <header className="chat-header"><button className="mobile-only" aria-label="Voltar" onClick={() => setSidebarOpen(true)}><ArrowLeft /></button><button className="chat-person" onClick={() => selected?.type === "group" ? setGroupInfoOpen(true) : setProfileOpen(true)}><Avatar name={selected?.participant?.name || selected?.title || pendingContact?.name} url={selected?.participant?.avatarUrl} /><span><strong>{selected?.participant?.name || selected?.title || pendingContact?.name || "Conversa"}</strong><small className={selected?.participant?.online ? "online-text" : ""}>{selected?.type === "group" ? "Informações do grupo" : presenceText(selected?.participant?.lastSeen, selected?.participant?.online)}</small></span></button><div className="call-actions">{selected?.type !== "group" && <><button aria-label="Iniciar chamada de áudio" disabled={startCall.isPending} onClick={() => selected && startCall.mutate({ conversationId: selected.id, type: "audio" })}><Phone /></button><button aria-label="Chamar por vídeo" disabled={startCall.isPending} onClick={() => selected && startCall.mutate({ conversationId: selected.id, type: "video" })}><Video /></button></>}<button aria-label="Informações da conversa" onClick={() => selected?.type === "group" ? setGroupInfoOpen(true) : toast.message(selected?.participant?.status || "Sem status.")}><Info /></button></div></header>
       <div className="message-scroll" ref={scroll}>{history.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando mensagens</div>}<button className="load-more" onClick={loadOlder} style={{ display: nextOlderCursor ? "block" : "none" }}>Carregar mensagens anteriores</button>{displayedMessages.length === 0 && !history.isLoading && <div className="conversation-empty"><MessageCircleMore /><span>Nenhuma mensagem ainda.</span><small>Envie a primeira mensagem para iniciar a conversa.</small></div>}{displayedMessages.map(message => <MessageBubble key={message.id} message={message} currentUserId={user?.id} onReply={setReply} onDeleteMe={id => deleteMe.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate() })} onDeleteAll={id => deleteAll.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate(), onError: error => toast.error(error.message) })} />)}{typing.data?.map(entry => <div key={entry.userId} className="typing-indicator"><span /><span /><span /> {entry.name} está digitando...</div>)}</div>
-      <div className="composer-area">{reply && <div className="reply-bar"><MessageCircleMore /><span>Respondendo a <strong>{reply.senderName || "mensagem"}</strong><small>{reply.content || "Mídia"}</small></span><button onClick={() => setReply(null)}><X /></button></div>}{image && <ImagePreview source={image} onCancel={() => setImage(null)} onSend={caption => submit(caption, image)} />}{recording ? <div className="recording-bar"><button onClick={() => stopRecord(true)} aria-label="Cancelar gravação"><Trash2 /></button><span><i /> Solte para enviar · {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, "0")}</span><Button size="icon" onClick={() => stopRecord(false)}><SendHorizonal /></Button></div> : <div className="composer"><button aria-label="Emoji" onClick={() => typingChange(`${composer}😊`)}><Smile /></button><button aria-label="Anexar imagem ou documento" onClick={() => imageInput.current?.click()}><Paperclip /></button><input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} /><Textarea value={composer} onChange={event => typingChange(event.target.value)} placeholder="Escreva uma mensagem" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} /><button aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }}><Mic /></button><Button size="icon" aria-label="Enviar mensagem" disabled={send.isPending || (!composer.trim() && !image)} onClick={() => submit()}>{send.isPending ? <Loader2 className="animate-spin" /> : <SendHorizonal />}</Button></div>}</div>
+      <div className="composer-area">{reply && <div className="reply-bar"><MessageCircleMore /><span>Respondendo a <strong>{reply.senderName || "mensagem"}</strong><small>{reply.content || "Mídia"}</small></span><button onClick={() => setReply(null)}><X /></button></div>}{image && <ImagePreview source={image} onCancel={() => setImage(null)} onSend={caption => submit(caption, image)} />}{recording ? <div className="recording-bar"><button onClick={() => stopRecord(true)} aria-label="Cancelar gravação"><Trash2 /></button><span><i /> Solte para enviar · {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, "0")}</span><Button size="icon" onClick={() => stopRecord(false)}><SendHorizonal /></Button></div> : <div className="composer"><Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
+  <PopoverTrigger asChild>
+    <button type="button" aria-label="Teclado de Emojis Divertidos" className="hover:text-emerald-600 transition-colors">
+      <Smile />
+    </button>
+  </PopoverTrigger>
+  <PopoverContent side="top" align="start" className="p-0 border-none bg-transparent shadow-none w-auto">
+    <EmojiPicker onSelectEmoji={(emoji) => {
+      typingChange(`${composer}${emoji}`);
+      setEmojiPickerOpen(false);
+    }} />
+  </PopoverContent>
+</Popover><button aria-label="Anexar imagem ou documento" onClick={() => imageInput.current?.click()}><Paperclip /></button><input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} /><Textarea value={composer} onChange={event => typingChange(event.target.value)} placeholder="Escreva uma mensagem" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} /><button aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }}><Mic /></button><Button size="icon" aria-label="Enviar mensagem" disabled={send.isPending || (!composer.trim() && !image)} onClick={() => submit()}>{send.isPending ? <Loader2 className="animate-spin" /> : <SendHorizonal />}</Button></div>}</div>
     </>}</main>
     <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />
     <CallDialog call={pendingCall.data && ["ringing", "connecting", "active"].includes(pendingCall.data.status) ? pendingCall.data as any : null} currentUserId={user?.id} onFinished={() => pendingCall.refetch()} />
     <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
+    <DownloadApkModal open={downloadApkOpen} onOpenChange={setDownloadApkOpen} />
+    <InviteModal open={inviteModalOpen} onOpenChange={setInviteModalOpen} currentUserName={profile.data?.name} currentUserEmail={user?.email} />
   </div>;
 }

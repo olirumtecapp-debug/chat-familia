@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DEFAULT_AVATAR, GROUP_AVATAR, optimizeImageForChat } from "@/lib/emojiAvatars";
 import { EmojiPicker } from "@/components/EmojiPicker";
+import { getEmojiDisplayStyle } from "@/lib/emojiUtils";
 import { CallModal } from "@/components/CallModal";
 import { trpc } from "@/lib/trpc";
 import { GroupMembersModal } from "@/components/GroupMembersModal";
@@ -342,8 +343,17 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
                     </a>
                   )}
 
-                  {/* Texto da mensagem */}
-                  {msg.content && <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>}
+                  {/* Texto da mensagem ou Emojis Gigantes */}
+                  {msg.content && (() => {
+                    const emojiInfo = getEmojiDisplayStyle(msg.content);
+                    return emojiInfo.isEmojiOnly ? (
+                      <div className={`select-none text-center ${emojiInfo.sizeClass}`}>
+                        {msg.content}
+                      </div>
+                    ) : (
+                      <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.content}</p>
+                    );
+                  })()}
 
                   {/* Horário */}
                   <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-slate-500 dark:text-slate-300/80">

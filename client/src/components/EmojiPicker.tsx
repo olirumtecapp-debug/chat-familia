@@ -1,7 +1,5 @@
 import React, { useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
 
 interface EmojiPickerProps {
   onSelectEmoji: (emoji: string) => void;
@@ -9,9 +7,19 @@ interface EmojiPickerProps {
 
 const EMOJI_CATEGORIES = [
   {
+    id: "fun",
+    label: "🔥",
+    title: "Divertidos & Populares",
+    emojis: [
+      "🔥", "🚀", "🎉", "💯", "✨", "❤️‍🔥", "💥", "🥳", "😎", "🤩",
+      "😂", "🤣", "🤪", "😜", "🤯", "🥰", "😍", "🤫", "🫡", "🤝",
+      "👏", "🙌", "💪", "👑", "⭐", "🌈", "🍕", "🍔", "☕", "🍻"
+    ],
+  },
+  {
     id: "faces",
     label: "😀",
-    title: "Carinhas",
+    title: "Carinhas & Emoções",
     emojis: [
       "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "🥹", "😊", "😇",
       "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛",
@@ -36,7 +44,7 @@ const EMOJI_CATEGORIES = [
   {
     id: "nature",
     label: "🐶",
-    title: "Animais & Flores",
+    title: "Animais & Natureza",
     emojis: [
       "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁",
       "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🦆", "🦅", "🦉", "🦇",
@@ -59,45 +67,23 @@ const EMOJI_CATEGORIES = [
     ],
   },
   {
-    id: "activities",
-    label: "🎉",
-    title: "Festas & Lazer",
-    emojis: [
-      "🎉", "🎊", "🎈", "🎂", "🎁", "🎀", "🪄", "🪅", "✨", "🎇", "🎆", "🎄",
-      "🎃", "⚽", "🏀", "🏈", "⚾", "🥎", "🎾", "🏐", "🏉", "🥏", "🎱", "🏓",
-      "🏸", "🏒", "🏑", "🥍", "🏏", "⛳", "🏹", "🎣", "🤿", "🥊", "🥋", "🛹",
-      "🛼", "🛷", "⛸️", "🎯", "🎮", "🕹️", "🎲", "🧩", "♟️", "🎭", "🎨", "🧵",
-      "🎸", "🎹", "🎺", "🎻", "🪕", "🥁", "🪘", "🎤", "🎧", "📻", "🎷"
-    ],
-  },
-  {
     id: "symbols",
     label: "❤️",
-    title: "Corações & Símbolos",
+    title: "Corações & Especiais",
     emojis: [
       "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹",
       "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "☮️", "✝️", "☪️",
-      "🕉️", "☸️", "✡️", "🔯", "🕎", "☯️", "☦️", "🛐", "⛎", "♈", "♉", "♊",
-      "♋", "♌", "♍", "♎", "♏", "♐", "♑", "♒", "♓", "🆔", "⚛️", "⭐",
-      "🌟", "✨", "⚡", "☄️", "💥", "🔥", "🌈", "☀️", "🌤️", "⛅", "🌧️", "⛈️",
-      "❄️", "☃️", "⛄", "💨", "🌊", "🔔", "🔕", "📢", "📣", "💬", "💭", "💯"
+      "⭐", "🌟", "✨", "⚡", "☄️", "💥", "🔥", "🌈", "☀️", "🌤️", "⛅", "🌧️",
+      "❄️", "💨", "🌊", "🔔", "🔕", "📢", "📣", "💬", "💭", "💯", "🎯", "🎲"
     ],
   },
 ];
 
 export function EmojiPicker({ onSelectEmoji }: EmojiPickerProps) {
-  const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState("faces");
-
-  const filteredCategories = EMOJI_CATEGORIES.map((cat) => ({
-    ...cat,
-    emojis: search
-      ? cat.emojis.filter(() => true) // Emojis são gráficos; exibimos todas se busca vazia
-      : cat.emojis,
-  }));
+  const [activeTab, setActiveTab] = useState("fun");
 
   return (
-    <div className="w-[300px] sm:w-[340px] p-2 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800">
+    <div className="w-[310px] sm:w-[350px] p-2 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="w-full grid grid-cols-6 h-9 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl mb-2">
           {EMOJI_CATEGORIES.map((cat) => (
@@ -119,16 +105,16 @@ export function EmojiPicker({ onSelectEmoji }: EmojiPickerProps) {
                 {cat.title}
               </span>
               <span className="text-[10px] text-slate-400">
-                {cat.emojis.length} emojis
+                {cat.emojis.length} opções
               </span>
             </div>
-            <div className="grid grid-cols-7 sm:grid-cols-8 gap-1 p-1 max-h-48 overflow-y-auto rounded-xl bg-slate-50/50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/50">
+            <div className="grid grid-cols-6 sm:grid-cols-7 gap-1.5 p-1 max-h-52 overflow-y-auto rounded-xl bg-slate-50/50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/50">
               {cat.emojis.map((emoji, idx) => (
                 <button
                   type="button"
                   key={idx}
                   onClick={() => onSelectEmoji(emoji)}
-                  className="w-8 h-8 flex items-center justify-center text-xl hover:scale-125 active:scale-95 transition-transform rounded-lg hover:bg-white dark:hover:bg-slate-800 cursor-pointer"
+                  className="w-10 h-10 flex items-center justify-center text-2xl hover:scale-130 active:scale-95 transition-all rounded-xl hover:bg-white dark:hover:bg-slate-800 cursor-pointer shadow-xs hover:shadow"
                 >
                   {emoji}
                 </button>
