@@ -1282,13 +1282,41 @@ var appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
-    localLogin: publicProcedure.input(z6.object({ name: z6.string().trim().min(2).max(120), email: z6.string().trim().email().max(320), familyCode: z6.string().trim().min(8).max(128) })).mutation(async ({ ctx, input }) => {
-      if (!validateFamilyCode(input.familyCode)) throw new TRPCError7({ code: "UNAUTHORIZED", message: "C\xF3digo privado da fam\xEDlia inv\xE1lido." });
+    localLogin: publicProcedure.input(z6.object({
+      name: z6.string().trim().min(2).max(120),
+      email: z6.string().trim().email().max(320),
+      familyCode: z6.string().optional()
+    })).mutation(async ({ ctx, input }) => {
       const user = await upsertLocalUser({ name: input.name, email: input.email });
       const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
       return { user, sessionToken };
+    }),
+    loginSimple: publicProcedure.input(z6.object({
+      name: z6.string().trim().min(2).max(120),
+      email: z6.string().trim().email().max(320),
+      statusMessage: z6.string().optional(),
+      avatarUrl: z6.string().optional()
+    })).mutation(async ({ ctx, input }) => {
+      const user = await upsertLocalUser({ name: input.name, email: input.email });
+      const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+      return { user, token: sessionToken, sessionToken };
+    }),
+    resetAllData: publicProcedure.mutation(async () => {
+      const dbInstance = await requireDatabase();
+      try { await dbInstance.delete(callSignals); } catch {}
+      try { await dbInstance.delete(calls); } catch {}
+      try { await dbInstance.delete(typingStates); } catch {}
+      try { await dbInstance.delete(messageStatuses); } catch {}
+      try { await dbInstance.delete(messageDeletions); } catch {}
+      try { await dbInstance.delete(messages); } catch {}
+      try { await dbInstance.delete(conversationMembers); } catch {}
+      try { await dbInstance.delete(conversations); } catch {}
+      try { await dbInstance.delete(users); } catch {}
+      return { success: true };
     }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);

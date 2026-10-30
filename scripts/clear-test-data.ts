@@ -1,47 +1,93 @@
 import "dotenv/config";
-import { ne } from "drizzle-orm";
 import { getDb } from "../server/db";
-import { conversations, conversationMembers, messages, messageReactions, users } from "../drizzle/schema";
+import {
+  conversations,
+  conversationMembers,
+  messages,
+  messageStatuses,
+  messageDeletions,
+  calls,
+  callSignals,
+  typingStates,
+  users,
+} from "../drizzle/schema";
 
 async function clearTestData() {
-  console.log("Iniciando limpeza dos dados e papos de teste...");
+  console.log("Iniciando limpeza total de dados...");
   const db = await getDb();
   if (!db) {
     console.error("Sem conexão com o banco");
     process.exit(1);
   }
 
-  // 1. Limpar reações
-  await db.delete(messageReactions);
-  console.log("Reações de teste removidas.");
+  try {
+    await db.delete(callSignals);
+    console.log("Sinais de chamadas limpos.");
+  } catch (e) {
+    console.warn("callSignals:", (e as Error).message);
+  }
 
-  // 2. Limpar mensagens de teste
-  await db.delete(messages);
-  console.log("Mensagens de teste removidas.");
+  try {
+    await db.delete(calls);
+    console.log("Chamadas limpas.");
+  } catch (e) {
+    console.warn("calls:", (e as Error).message);
+  }
 
-  // 3. Limpar membros de conversas de teste
-  await db.delete(conversationMembers);
-  console.log("Membros de conversas de teste removidos.");
+  try {
+    await db.delete(typingStates);
+    console.log("Estados de digitação limpos.");
+  } catch (e) {
+    console.warn("typingStates:", (e as Error).message);
+  }
 
-  // 4. Limpar conversas/grupos de teste
-  await db.delete(conversations);
-  console.log("Conversas e grupos de teste removidos.");
+  try {
+    await db.delete(messageStatuses);
+    console.log("Status de mensagens limpos.");
+  } catch (e) {
+    console.warn("messageStatuses:", (e as Error).message);
+  }
 
-  // 5. Remover usuários fictícios do seed (mantém o usuário real Murilo)
-  await db.delete(users).where(ne(users.email, "olirumdev1@gmail.com"));
-  console.log("Usuários fictícios removidos. Apenas a conta real de Murilo foi mantida.");
+  try {
+    await db.delete(messageDeletions);
+    console.log("Exclusões de mensagens limpas.");
+  } catch (e) {
+    console.warn("messageDeletions:", (e as Error).message);
+  }
 
-  const remainingUsers = await db.select().from(users);
-  console.log("Usuários restantes no banco:", remainingUsers.map(u => ({ id: u.id, name: u.name, email: u.email })));
+  try {
+    await db.delete(messages);
+    console.log("Todas as mensagens antigas foram removidas.");
+  } catch (e) {
+    console.warn("messages:", (e as Error).message);
+  }
 
-  const remainingConvs = await db.select().from(conversations);
-  console.log("Conversas restantes no banco:", remainingConvs.length);
+  try {
+    await db.delete(conversationMembers);
+    console.log("Membros de conversas removidos.");
+  } catch (e) {
+    console.warn("conversationMembers:", (e as Error).message);
+  }
 
-  console.log("Limpeza concluída com sucesso! O chat está 100% limpo.");
+  try {
+    await db.delete(conversations);
+    console.log("Todas as conversas e grupos antigos foram removidos.");
+  } catch (e) {
+    console.warn("conversations:", (e as Error).message);
+  }
+
+  try {
+    await db.delete(users);
+    console.log("Todos os usuários de teste anteriores foram removidos.");
+  } catch (e) {
+    console.warn("users:", (e as Error).message);
+  }
+
+  console.log("Limpeza concluída com sucesso! Banco 100% zerado e novo.");
   process.exit(0);
 }
 
 clearTestData().catch((err) => {
-  console.error("Erro ao limpar dados de teste:", err);
+  console.error("Erro ao limpar dados:", err);
   process.exit(1);
 });

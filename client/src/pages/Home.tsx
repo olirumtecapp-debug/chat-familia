@@ -95,6 +95,11 @@ function Welcome() {
   const { loading } = useAuth();
   const { installApp, showGuide, setShowGuide, isIOS, isInstalled } = usePwaInstall();
   const utils = trpc.useUtils();
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [mode, setMode] = useState<"signup" | "login">("signup");
+
+  const invitedBy = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("u") : null;
+
   const login = trpc.auth.localLogin.useMutation({
     onSuccess: async (data: any) => {
       const token = data?.sessionToken;
@@ -108,46 +113,135 @@ function Welcome() {
       }
       await utils.auth.me.refetch();
       await utils.profile.me.refetch();
-      toast.success("Acesso liberado! Entrando no ChatForAll...");
+      toast.success("Conta acessada com sucesso!");
     },
     onError: error => toast.error(error.message)
   });
-  const [name, setName] = useState(""); const [email, setEmail] = useState(""); const [familyCode, setFamilyCode] = useState("");
+
+  const resetMutation = (trpc.auth as any).resetAllData?.useMutation?.({
+    onSuccess: () => {
+      toast.success("Banco de dados zerado com sucesso!");
+      window.location.reload();
+    },
+    onError: (err: any) => toast.error(err.message || "Erro ao zerar dados.")
+  });
+
+  const [name, setName] = useState("");
+  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (mode === "signup") {
+      const cleanName = name.trim();
+      const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+      const cleanEmail = email.trim();
+      if (!cleanName) return toast.error("Informe seu nome.");
+      if (!cleanEmail) return toast.error("Informe seu e-mail.");
+
+      const finalEmail = cleanEmail.includes("@") ? cleanEmail : `${cleanUsername || cleanName.toLowerCase().replace(/\s+/g, "")}@chat.creativeam.com.br`;
+      login.mutate({ name: cleanName, email: finalEmail });
+    } else {
+      const cleanIdentifier = email.trim();
+      const cleanName = name.trim() || cleanIdentifier.split("@")[0] || "Usuário";
+      if (!cleanIdentifier) return toast.error("Informe seu e-mail ou apelido.");
+      const finalEmail = cleanIdentifier.includes("@") ? cleanIdentifier : `${cleanIdentifier.toLowerCase().replace(/[^a-z0-9_]/g, "")}@chat.creativeam.com.br`;
+      login.mutate({ name: cleanName, email: finalEmail });
+    }
+  };
+
   return <main className="auth-shell">
     <div className="auth-orbit orbit-one" /><div className="auth-orbit orbit-two" />
     <section className="auth-panel">
       <img className="auth-logo" src="/icon-512.png" alt="ChatForAll" />
-      <p className="eyebrow">Comunicação privada, sem ruído</p>
-      <h1>Todos próximos.<br /><em>Onde importa.</em></h1>
-      <p className="auth-copy">ChatForAll mantém as conversas da sua família em um espaço leve, privado e direto.</p>
-      <form className="local-login-form" onSubmit={event => {
-        event.preventDefault();
-        const cleanName = name.trim();
-        const cleanEmail = email.trim();
-        const cleanCode = familyCode.trim();
-        if (!cleanName) return toast.error("Informe seu nome.");
-        if (!cleanEmail) return toast.error("Informe seu e-mail.");
-        if (!cleanCode) return toast.error("Informe o código privado da família.");
-        login.mutate({ name: cleanName, email: cleanEmail, familyCode: cleanCode });
-      }}>
-        <Input value={name} onChange={event => setName(event.target.value)} placeholder="Seu nome" autoComplete="name" />
-        <Input value={email} onChange={event => setEmail(event.target.value)} placeholder="Seu e-mail" type="email" autoComplete="email" />
-        <Input value={familyCode} onChange={event => setFamilyCode(event.target.value)} placeholder="Código privado da família" type="password" autoComplete="one-time-code" />
-        <Button className="login-action" size="lg" disabled={loading || login.isPending} type="submit">
-          {loading || login.isPending ? <Loader2 className="animate-spin" /> : <MessageCircleMore />} Entrar no ChatForAll
-        </Button>
-      </form>
-      {!isInstalled && (
-        <button type="button" onClick={installApp} className="install-pwa-banner">
-          <Smartphone className="w-4 h-4 text-[var(--accent)]" />
-          <span>Instalar app / atalho no celular</span>
-          <Download className="w-4 h-4 text-[var(--accent)] ml-auto" />
-        </button>
+      <p className="eyebrow">Mensagens Privadas & Rápidas</p>
+      <h1>Converse Livremente.<br /><em>Sem complicação.</em></h1>
+      <p className="auth-copy">ChatForAll é leve, seguro e direto. Não precisa de número de telefone para falar com amigos ou família.</p>
+
+      {invitedBy && (
+        <div className="p-3 mb-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-2">
+          <span>✨</span>
+          <span>Você foi convidado por <b>@{invitedBy}</b> para bater papo! Crie sua conta abaixo para começar:</span>
+        </div>
       )}
-      <p className="auth-note">Use seu nome, e-mail e o código privado compartilhado pela família para entrar.</p>
+
+      <div className="flex w-full p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-3">
+        <button
+          type="button"
+          onClick={() => setMode("signup")}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${mode === "signup" ? "bg-white dark:bg-slate-900 shadow text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"}`}
+        >
+          Criar Conta
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("login")}
+          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${mode === "login" ? "bg-white dark:bg-slate-900 shadow text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"}`}
+        >
+          Já tenho conta
+        </button>
+      </div>
+
+      <form className="local-login-form" onSubmit={handleSubmit}>
+        {mode === "signup" ? (
+          <>
+            <Input value={name} onChange={event => setName(event.target.value)} placeholder="Seu nome completo" autoComplete="name" required />
+            <Input value={username} onChange={event => setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} placeholder="Apelido único (ex: @seu_nome)" autoComplete="username" />
+            <Input value={email} onChange={event => setEmail(event.target.value)} placeholder="Seu e-mail" type="email" autoComplete="email" required />
+            <Input value={password} onChange={event => setPassword(event.target.value)} placeholder="Criar senha de acesso (opcional)" type="password" autoComplete="new-password" />
+            <Button className="login-action" size="lg" disabled={loading || login.isPending} type="submit">
+              {loading || login.isPending ? <Loader2 className="animate-spin" /> : <MessageCircleMore />} Criar Conta e Entrar
+            </Button>
+          </>
+        ) : (
+          <>
+            <Input value={email} onChange={event => setEmail(event.target.value)} placeholder="Seu e-mail ou apelido" autoComplete="email" required />
+            <Input value={password} onChange={event => setPassword(event.target.value)} placeholder="Sua senha de acesso" type="password" autoComplete="current-password" />
+            <Button className="login-action" size="lg" disabled={loading || login.isPending} type="submit">
+              {loading || login.isPending ? <Loader2 className="animate-spin" /> : <MessageCircleMore />} Entrar no ChatForAll
+            </Button>
+          </>
+        )}
+      </form>
+
+      <div className="flex flex-col gap-2 w-full mt-2">
+        <button
+          type="button"
+          onClick={() => setDownloadModalOpen(true)}
+          className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 transition-all cursor-pointer"
+        >
+          <Smartphone className="w-4 h-4" /> Baixar APK oficial para Android
+        </button>
+
+        {!isInstalled && (
+          <button type="button" onClick={installApp} className="install-pwa-banner text-xs">
+            <Smartphone className="w-4 h-4 text-[var(--accent)]" />
+            <span>Adicionar atalho na tela inicial</span>
+            <Download className="w-4 h-4 text-[var(--accent)] ml-auto" />
+          </button>
+        )}
+      </div>
+
+      <div className="mt-4 pt-3 border-t border-slate-200/50 dark:border-slate-800/50 flex items-center justify-between text-[11px] text-slate-400">
+        <span>ChatForAll Oficial · 100% Privado</span>
+        <button
+          type="button"
+          className="text-slate-400 hover:text-red-500 hover:underline cursor-pointer"
+          onClick={() => {
+            if (window.confirm("Atenção: Deseja apagar todas as conversas e zerar os dados de teste do banco de dados?")) {
+              resetMutation?.mutate?.();
+            }
+          }}
+        >
+          Zerar banco de dados
+        </button>
+      </div>
     </section>
+
     <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
-      </main>;
+    <DownloadApkModal open={downloadModalOpen} onOpenChange={setDownloadModalOpen} />
+  </main>;
 }
 
 function Onboarding({ onDone }: { onDone: () => void }) {
@@ -308,6 +402,14 @@ export default function Home() {
   const imageInput = useRef<HTMLInputElement>(null); const scroll = useRef<HTMLDivElement>(null); const knownIncoming = useRef(new Set<number>());
   const send = trpc.messaging.send.useMutation({ onSuccess: () => { setComposer(""); setReply(null); setImage(null); utils.messaging.history.invalidate(); utils.messaging.list.invalidate(); }, onError: error => toast.error(error.message) });
   const setTyping = trpc.messaging.setTyping.useMutation();
+  const resetData = (trpc.auth as any).resetAllData.useMutation({
+    onSuccess: () => {
+      toast.success('Banco de dados zerado com sucesso!');
+      logout();
+      window.location.reload();
+    },
+    onError: (err: any) => toast.error(err.message || 'Erro ao zerar dados.')
+  });
 
   useEffect(() => { if (conversations.data && selectedId === null && conversations.data[0]) setSelectedId(conversations.data[0].id); }, [conversations.data, selectedId]);
   useEffect(() => { setOlderMessages([]); setNextOlderCursor(null); }, [selectedId]);
@@ -346,6 +448,7 @@ export default function Home() {
         <button onClick={() => setInviteModalOpen(true)} title="Convidar amigos"><UserPlus className="w-4 h-4" /> Convidar</button>
         <button onClick={requestNotification}><Bell /> Notificações</button>
         <button onClick={toggleTheme}>{theme === "dark" ? <Sun /> : <Moon />} {theme === "dark" ? "Modo claro" : "Modo escuro"}</button>
+        <button onClick={() => { if (window.confirm('Atenção: Deseja apagar todas as conversas e zerar os dados de teste do banco?')) resetData.mutate(); }} className='text-red-500/80 hover:text-red-500' title='Zerar banco de dados'><Trash2 className='w-4 h-4' /> Zerar banco</button>
         <button onClick={() => logout()}><LogOut /> Sair</button>
       </footer>
     </aside>
