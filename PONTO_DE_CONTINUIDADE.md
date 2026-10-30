@@ -1,38 +1,47 @@
 # PONTO DE CONTINUIDADE - CHATFORALL / CASA CHAT
 
-**Última Atualização:** 30/10/2026 - 17:10 (Horário de Brasília)  
+**Última Atualização:** 30/10/2026 - 17:48 (Horário de Brasília)  
 **Status do Projeto:** 🟢 Operacional em Produção (`https://chat.creativeam.com.br`)  
 **Repositório:** `https://github.com/olirumtecapp-debug/chat-familia.git` (branch `main`)  
-**Último Commit:** `1c2328f`
+**Último Commit:** `86e70cb`
 
 ---
 
 ## 🎯 Melhorias e Correções Implementadas nesta Sessão
 
-### 1. Correção Total do Perfil de Usuário (`ProfileDialog` e `dialog.tsx`)
-- **Problema resolvido:** Ao clicar no card do usuário na barra lateral, abria uma tela escura e o conteúdo ficava transparente/invisível devido ao conflito da variável `--background` no Tailwind v4.
-- **Solução:**
-  - `client/src/components/ui/dialog.tsx`: Fundo do `DialogContent` tornado explicitamente sólido (`bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-slate-900 dark:text-slate-100 shadow-2xl`).
-  - `client/src/index.css`: Mapeamento correto das variáveis `:root` e `.dark` (`--background`, `--foreground`, etc.) e estilização dedicada de `.profile-dialog`.
-  - `client/src/pages/Home.tsx`: Modal de perfil reformulado com avatar estilizado, campos visíveis (Nome, E-mail, Status/Recado), botões explícitos "Fechar" e "Salvar alterações" com fechamento automático no salvamento.
+### 1. Harmonização Visual Total & Fim do Contraste Quebrado nos Modais
+- **Problema resolvido:** Nos celulares com modo escuro ativado pelo sistema Android, o Tailwind CSS v4 aplicava classes `dark:` com inputs pretos (`#0E1726`) dentro de modais brancos, criando uma quebra visual drástica e desarmônica.
+- **Solução implementada:**
+  - `@custom-variant dark (&:where(.dark, .dark *));` inserido no `client/src/index.css` garantindo que o tema da aplicação seja o único controlador de estilo.
+  - Criação de variáveis universais `--input-bg`, `--input-border`, `--input-text`, `--surface`, `--surface-soft` e `--ink` para ambos os modos (claro e escuro).
+  - Regra CSS universal para todos os formulários e inputs, garantindo cores harmoniosas, sombras suaves e bordas arredondadas modernas (estilo WhatsApp / Telegram).
 
-### 2. Localização Instantânea de Contatos (Padrão WhatsApp)
-- **Problema resolvido:** Usuários cadastrados (Esposa, Filho) não apareciam em lugar nenhum, pois o sistema exigia busca por texto com digitação prévia e uma conversa já iniciada.
-- **Solução estilo WhatsApp:**
-  - **Abas dedicadas na barra lateral:** `[ 💬 Conversas ]` e `[ 👥 Contatos (X) ]`.
-  - Ao clicar na aba **Contatos**, a lista de familiares e membros cadastrados aparece imediatamente com foto/avatar, indicador online verde, nome, e-mail/status e o botão **Conversar**.
-  - 1 clique em qualquer contato já inicia ou abre o chat direto imediatamente.
-  - Na aba **Conversas**, quando a lista está vazia, há um card amigável com botão direto "Ver contatos cadastrados".
-  - **Botão Flutuante (FAB):** Adicionado botão redondo azul flutuante no canto inferior da barra lateral para abrir nova conversa com 1 toque.
-  - **Modal Nova Conversa (`NewChatDialog`):** Removeu o bloqueio que exigia digitação. Agora ao abrir o modal, todos os contatos já aparecem listados para seleção imediata.
+### 2. Pesquisa Universal por Nome, @Apelido ou E-mail
+- **Problema resolvido:** O usuário buscou por `olirumfilho` e não encontrou porque o apelido não estava indexado e a busca pesquisava apenas pelo nome e e-mail.
+- **Solução implementada:**
+  - Adicionada a coluna `nickname` na tabela `users` do schema (`drizzle/schema.ts`).
+  - Atualização do `server/routers/profile.ts`: O endpoint de pesquisa remove automaticamente o prefixo `@` caso digitado e faz a busca simultânea em `users.name`, `users.nickname` e `users.email`.
+  - Exibição destacada da badge de apelido (`@olirumpai`, `@esposasilva`, `@olirumfilho`) tanto na lista de contatos quanto nos resultados de pesquisa.
 
-### 3. Remoção do Grupo Fantasma "Chat Família"
-- O grupo de teste pré-definido "Família Silva ❤️" foi completamente excluído da inicialização (`server/mockDb.ts`) e da base de dados ativa (`chat-store.json`). O app agora inicia limpo e direto.
+### 3. Validação de Apelidos Duplicados com Sugestões Inteligentes em Tempo Real
+- **Problema resolvido:** Dois usuários podiam tentar usar o mesmo apelido, gerando confusão e colisões de busca.
+- **Solução implementada:**
+  - Adicionado endpoint `auth.checkNickname` com validação em tempo real enquanto o usuário digita.
+  - Caso o apelido já esteja registrado por outra pessoa, a interface bloqueia a duplicidade e exibe um painel elegante com sugestões com 1 clique (ex: `@olirumfilho1`, `@olirumfilho2026`, `@olirumfilho_`).
+  - No formulário de Perfil (`ProfileDialog`), o usuário agora pode ver, cadastrar ou alterar seu `@apelido` a qualquer momento com a mesma proteção contra duplicidades.
+
+### 4. Facilidade de Uso para Qualquer Usuário
+- Interface intuitiva com abas "Conversas" e "Contatos", permitindo que qualquer familiar encontre o outro e comece a conversar com apenas 1 toque.
+- Usuários pré-configurados para a família:
+  - Murilo: `@olirumpai` (`olirumtecapp@gmail.com`)
+  - Esposa: `@esposasilva` (`esposa@gmail.com`)
+  - Filho: `@olirumfilho` (`filho@gmail.com`)
 
 ---
 
 ## 🧪 Verificações e Testes
-- **14 Testes Unitários e de Integração:** `pnpm test` (14 passed).
-- **Build de Produção:** `vite build` executado com sucesso em 31s.
+- **18 Testes Unitários e de Integração:** `pnpm test` (18 passed em 8 suítes de teste).
+- **Suíte dedicada de busca e apelidos:** `server/nickname-search.test.ts`.
+- **Build de Produção:** `vite build` executado e aprovado com sucesso.
 - **Serverless API:** `api/serverless.ts` compilado para `api/index.js` via esbuild.
-- **Deploy Vercel:** Deploy `dpl_DrirhJWXtnjuMFjjDDau9U7z2Vzd` e commit `1c2328f` finalizados como READY em produção.
+- **Deploy Vercel:** Commit `86e70cb` publicado em produção.
