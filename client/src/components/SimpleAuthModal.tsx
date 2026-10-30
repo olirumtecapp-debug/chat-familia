@@ -60,7 +60,7 @@ export function SimpleAuthModal({ isOpen, onSuccess }: SimpleAuthModalProps) {
       <DialogContent className="sm:max-w-[420px] max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl shadow-xl">
         <DialogHeader className="text-left pb-1">
           <div className="flex items-center gap-2 mb-1">
-            <div className="w-8 h-8 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center shrink-0 shadow-xs">
+            <div className="w-8 h-8 bg-blue-100 text-[#0080EA] rounded-xl flex items-center justify-center shrink-0 shadow-xs">
               <Heart className="w-4 h-4 fill-emerald-600" />
             </div>
             <DialogTitle className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">
@@ -125,7 +125,7 @@ export function SimpleAuthModal({ isOpen, onSuccess }: SimpleAuthModalProps) {
               <Label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Avatar Inicial
               </Label>
-              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+              <span className="text-[11px] text-[#0080EA] dark:text-[#38BDF8] font-medium">
                 {EMOJI_AVATAR_PRESETS.find((p) => p.url === avatarUrl)?.label || "Selecionado"}
               </span>
             </div>
@@ -141,7 +141,7 @@ export function SimpleAuthModal({ isOpen, onSuccess }: SimpleAuthModalProps) {
                     title={preset.label}
                     className={`relative w-10 h-10 rounded-full transition-all flex items-center justify-center cursor-pointer ${
                       isSelected
-                        ? "ring-3 ring-emerald-500 scale-105 shadow-md z-10"
+                        ? "ring-3 ring-[#0080EA] scale-105 shadow-md z-10"
                         : "opacity-75 hover:opacity-100 hover:scale-105"
                     }`}
                   >
@@ -165,7 +165,7 @@ export function SimpleAuthModal({ isOpen, onSuccess }: SimpleAuthModalProps) {
             <Button
               type="submit"
               disabled={loginMutation.isPending}
-              className="w-full h-11 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full h-11 bg-[#0080EA] hover:bg-[#0060B8] active:scale-[0.99] text-white rounded-xl font-bold shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               {loginMutation.isPending ? (
                 <>

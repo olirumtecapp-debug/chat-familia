@@ -216,14 +216,14 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
           >
             <div className="relative shrink-0">
               <img src={avatar} alt={title} className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover ring-1 ring-slate-300" />
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-[#202c33]" />
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#0080EA] rounded-full ring-2 ring-white dark:ring-[#202c33]" />
             </div>
 
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1.5">
                 {title}
                 {isGroup && (
-                  <span className="text-[10px] font-medium px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300">
+                  <span className="text-[10px] font-medium px-1.5 py-0.2 rounded-full bg-blue-100 dark:bg-emerald-950/80 text-[#0060B8] dark:text-emerald-300">
                     Grupo
                   </span>
                 )}
@@ -240,7 +240,7 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
           {isGroup && (
             <button
               onClick={() => setIsGroupModalOpen(true)}
-              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
+              className="p-2 text-[#0080EA] dark:text-[#38BDF8] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
               title="Participantes do Grupo (Adicionar / Excluir)"
             >
               <Users className="w-4.5 h-4.5" />
@@ -248,14 +248,14 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
           )}
           <button
             onClick={() => handleStartCall("audio")}
-            className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
+            className="p-2 text-[#0080EA] dark:text-[#38BDF8] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
             title="Iniciar Ligação de Voz"
           >
             <Phone className="w-4.5 h-4.5" />
           </button>
           <button
             onClick={() => handleStartCall("video")}
-            className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
+            className="p-2 text-[#0080EA] dark:text-[#38BDF8] hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
             title="Iniciar Chamada de Vídeo"
           >
             <Video className="w-4.5 h-4.5" />
@@ -267,11 +267,11 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
       <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-3 chat-pattern-bg overscroll-contain">
         {messagesQuery.isLoading ? (
           <div className="flex items-center justify-center h-full">
-            <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-[#0080EA]" />
           </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-4">
-            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 rounded-2xl flex items-center justify-center mb-2 shadow-sm">
+            <div className="w-12 h-12 bg-blue-100 dark:bg-emerald-950/40 text-[#0080EA] rounded-2xl flex items-center justify-center mb-2 shadow-sm">
               <Heart className="w-6 h-6 fill-emerald-600" />
             </div>
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Comece a conversa com sua família!</p>
@@ -297,7 +297,7 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
                   }`}
                 >
                   {!isMe && conv?.type === "group" && (
-                    <p className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 mb-1">
+                    <p className="text-[11px] font-bold text-[#0080EA] dark:text-[#38BDF8] mb-1">
                       {msg.senderName}
                     </p>
                   )}
@@ -336,8 +336,8 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 p-2.5 bg-black/5 dark:bg-white/10 rounded-xl mb-1.5 hover:bg-black/10 transition"
                     >
-                      <FileText className="w-5 h-5 text-emerald-600 shrink-0" />
-                      <span className="text-xs font-semibold truncate underline text-emerald-700 dark:text-emerald-400">
+                      <FileText className="w-5 h-5 text-[#0080EA] shrink-0" />
+                      <span className="text-xs font-semibold truncate underline text-[#0060B8] dark:text-[#38BDF8]">
                         {msg.fileName || "Baixar arquivo"}
                       </span>
                     </a>
@@ -437,13 +437,13 @@ export function ChatWindow({ conversationId, currentUserId, onBackMobile }: Chat
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             placeholder="Mensagem para a família..."
-            className="h-11 rounded-2xl bg-white dark:bg-[#2a3942] border-none focus-visible:ring-1 focus-visible:ring-emerald-500 text-sm px-4 shadow-sm"
+            className="h-11 rounded-2xl bg-white dark:bg-[#2a3942] border-none focus-visible:ring-1 focus-visible:ring-[#0080EA] text-sm px-4 shadow-sm"
           />
 
           <Button
             type="submit"
             disabled={sendMutation.isPending || (!inputText.trim() && !isUploading)}
-            className="w-11 h-11 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white shrink-0 p-0 flex items-center justify-center shadow-md transition-transform active:scale-95 cursor-pointer"
+            className="w-11 h-11 rounded-full bg-[#0080EA] hover:bg-[#0060B8] text-white shrink-0 p-0 flex items-center justify-center shadow-md transition-transform active:scale-95 cursor-pointer"
           >
             {sendMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4 ml-0.5" />}
           </Button>

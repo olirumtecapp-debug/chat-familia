@@ -31,7 +31,7 @@ export function DownloadApkModal({ open, onOpenChange }: DownloadApkModalProps) 
         {/* Recursos Principais */}
         <div className="grid grid-cols-2 gap-2.5 my-3 text-xs">
           <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950/60 border border-slate-100 dark:border-slate-800/80 flex flex-col gap-1">
-            <div className="flex items-center gap-1.5 font-bold text-emerald-600 dark:text-emerald-400">
+            <div className="flex items-center gap-1.5 font-bold text-[#0080EA] dark:text-[#38BDF8]">
               <ShieldCheck className="w-4 h-4" /> 100% Privado
             </div>
             <span className="text-slate-500 dark:text-slate-400">Sem expor número de telefone pessoal para ninguém.</span>
@@ -49,7 +49,7 @@ export function DownloadApkModal({ open, onOpenChange }: DownloadApkModalProps) 
           <a
             href={apkDownloadUrl}
             download="ChatForAll.apk"
-            className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold text-sm shadow-lg shadow-emerald-600/25 transition-all text-center"
+            className="w-full inline-flex items-center justify-center gap-2 py-3.5 px-5 rounded-2xl bg-[#0080EA] hover:bg-[#0060B8] active:scale-[0.99] text-white font-bold text-sm shadow-lg shadow-emerald-600/25 transition-all text-center"
           >
             <Download className="w-5 h-5" />
             Baixar APK Oficial Grátis (Android)
@@ -57,7 +57,7 @@ export function DownloadApkModal({ open, onOpenChange }: DownloadApkModalProps) 
 
           <div className="flex items-center justify-between px-2 pt-1 text-[11px] text-slate-400">
             <span>Versão 1.0.0 Oficial</span>
-            <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
+            <span className="flex items-center gap-1 text-[#0080EA] dark:text-[#38BDF8] font-semibold">
               <CheckCircle2 className="w-3.5 h-3.5" /> Verificado e Seguro
             </span>
           </div>
@@ -71,7 +71,7 @@ export function DownloadApkModal({ open, onOpenChange }: DownloadApkModalProps) 
             <button
               type="button"
               onClick={() => onOpenChange(false)}
-              className="font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 underline cursor-pointer"
+              className="font-semibold text-[#0080EA] hover:text-[#0060B8] dark:text-[#38BDF8] underline cursor-pointer"
             >
               Continuar usando pelo Navegador Web
             </button>

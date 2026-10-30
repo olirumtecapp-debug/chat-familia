@@ -23,7 +23,7 @@ import { resolveMediaUrl } from "@shared/media";
 import { getEmojiDisplayStyle } from "@/lib/emojiUtils";
 import { EmojiPicker } from "@/components/EmojiPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { UserPlus } from "lucide-react";
+import { UserPlus, User, AtSign, Mail, Lock, Sparkles, ShieldCheck } from "lucide-react";
 
 type FilePayload = { dataUrl: string; name: string; duration?: number; kind: "image" | "file" };
 type ReplyTarget = { id: number; content: string | null; senderName: string | null };
@@ -118,14 +118,6 @@ function Welcome() {
     onError: error => toast.error(error.message)
   });
 
-  const resetMutation = (trpc.auth as any).resetAllData?.useMutation?.({
-    onSuccess: () => {
-      toast.success("Banco de dados zerado com sucesso!");
-      window.location.reload();
-    },
-    onError: (err: any) => toast.error(err.message || "Erro ao zerar dados.")
-  });
-
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -141,77 +133,165 @@ function Welcome() {
       if (!cleanEmail) return toast.error("Informe seu e-mail.");
 
       const finalEmail = cleanEmail.includes("@") ? cleanEmail : `${cleanUsername || cleanName.toLowerCase().replace(/\s+/g, "")}@chat.creativeam.com.br`;
-      login.mutate({ name: cleanName, email: finalEmail });
+      login.mutate({ name: cleanName, email: finalEmail, nickname: cleanUsername, password: password || undefined, inviteBy: invitedBy || undefined });
     } else {
       const cleanIdentifier = email.trim();
       const cleanName = name.trim() || cleanIdentifier.split("@")[0] || "Usuário";
       if (!cleanIdentifier) return toast.error("Informe seu e-mail ou apelido.");
       const finalEmail = cleanIdentifier.includes("@") ? cleanIdentifier : `${cleanIdentifier.toLowerCase().replace(/[^a-z0-9_]/g, "")}@chat.creativeam.com.br`;
-      login.mutate({ name: cleanName, email: finalEmail });
+      login.mutate({ name: cleanName, email: finalEmail, password: password || undefined });
     }
   };
 
   return <main className="auth-shell">
     <div className="auth-orbit orbit-one" /><div className="auth-orbit orbit-two" />
     <section className="auth-panel">
-      <img className="auth-logo" src="/icon-512.png" alt="ChatForAll" />
-      <p className="eyebrow">Mensagens Privadas & Rápidas</p>
-      <h1>Converse Livremente.<br /><em>Sem complicação.</em></h1>
-      <p className="auth-copy">ChatForAll é leve, seguro e direto. Não precisa de número de telefone para falar com amigos ou família.</p>
+      <img className="auth-logo h-14 sm:h-16 w-auto object-contain mx-auto mb-2" src="/ChatForAll-Logo.png" alt="ChatForAll" />
+      
+      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0080EA]/10 border border-[#0080EA]/25 text-[#0080EA] text-[11px] font-extrabold uppercase tracking-wider mb-3">
+        <Sparkles className="w-3.5 h-3.5" />
+        <span>Comunicação Direta & Privada</span>
+      </div>
+
+      <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">
+        Converse Livremente.<br />
+        <span className="text-[#0080EA]">Simples e descomplicado.</span>
+      </h1>
+      
+      <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 max-w-sm mx-auto mb-5 leading-relaxed">
+        Mensagens, fotos, áudios e chamadas criptografadas sem precisar expor seu número de celular.
+      </p>
 
       {invitedBy && (
-        <div className="p-3 mb-3 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl text-xs text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-2">
+        <div className="p-3 mb-4 bg-[#0080EA]/10 border border-[#0080EA]/30 rounded-2xl text-xs text-[#0080EA] dark:text-[#38BDF8] font-semibold flex items-center gap-2 text-left">
           <span>✨</span>
-          <span>Você foi convidado por <b>@{invitedBy}</b> para bater papo! Crie sua conta abaixo para começar:</span>
+          <span>Você foi convidado por <b>@{invitedBy}</b>! Crie sua conta abaixo para conectar:</span>
         </div>
       )}
 
-      <div className="flex w-full p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-3">
+      <div className="flex w-full p-1 bg-slate-100 dark:bg-[#142034] rounded-2xl border border-slate-200/80 dark:border-[#1E2F4D] mb-4">
         <button
           type="button"
           onClick={() => setMode("signup")}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${mode === "signup" ? "bg-white dark:bg-slate-900 shadow text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"}`}
+          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${mode === "signup" ? "bg-[#0080EA] text-white shadow-md shadow-[#0080EA]/25" : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"}`}
         >
           Criar Conta
         </button>
         <button
           type="button"
           onClick={() => setMode("login")}
-          className={`flex-1 py-1.5 text-xs font-semibold rounded-lg transition-all ${mode === "login" ? "bg-white dark:bg-slate-900 shadow text-emerald-600 dark:text-emerald-400 font-bold" : "text-slate-500 hover:text-slate-900 dark:hover:text-white"}`}
+          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${mode === "login" ? "bg-[#0080EA] text-white shadow-md shadow-[#0080EA]/25" : "text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"}`}
         >
           Já tenho conta
         </button>
       </div>
 
-      <form className="local-login-form" onSubmit={handleSubmit}>
+      <form className="local-login-form flex flex-col gap-3" onSubmit={handleSubmit}>
         {mode === "signup" ? (
           <>
-            <Input value={name} onChange={event => setName(event.target.value)} placeholder="Seu nome completo" autoComplete="name" required />
-            <Input value={username} onChange={event => setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))} placeholder="Apelido único (ex: @seu_nome)" autoComplete="username" />
-            <Input value={email} onChange={event => setEmail(event.target.value)} placeholder="Seu e-mail" type="email" autoComplete="email" required />
-            <Input value={password} onChange={event => setPassword(event.target.value)} placeholder="Criar senha de acesso (opcional)" type="password" autoComplete="new-password" />
-            <Button className="login-action" size="lg" disabled={loading || login.isPending} type="submit">
-              {loading || login.isPending ? <Loader2 className="animate-spin" /> : <MessageCircleMore />} Criar Conta e Entrar
-            </Button>
+            <div className="relative flex items-center">
+              <User className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={name}
+                onChange={event => setName(event.target.value)}
+                placeholder="Seu nome completo"
+                autoComplete="name"
+                required
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+              />
+            </div>
+
+            <div className="relative flex items-center">
+              <AtSign className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={username}
+                onChange={event => setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                placeholder="Apelido único (ex: @seu_nome)"
+                autoComplete="username"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+              />
+            </div>
+
+            <div className="relative flex items-center">
+              <Mail className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={email}
+                onChange={event => setEmail(event.target.value)}
+                placeholder="Seu e-mail"
+                type="email"
+                autoComplete="email"
+                required
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+              />
+            </div>
+
+            <div className="relative flex items-center">
+              <Lock className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                placeholder="Criar senha de acesso (opcional)"
+                type="password"
+                autoComplete="new-password"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || login.isPending}
+              className="w-full h-12 rounded-xl bg-gradient-to-r from-[#0080EA] to-[#005bb5] hover:from-[#0070d0] hover:to-[#004f9f] text-white font-bold text-sm shadow-lg shadow-[#0080EA]/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-1 cursor-pointer"
+            >
+              {loading || login.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <MessageCircleMore className="w-5 h-5" />}
+              <span>Criar Conta e Entrar</span>
+            </button>
           </>
         ) : (
           <>
-            <Input value={email} onChange={event => setEmail(event.target.value)} placeholder="Seu e-mail ou apelido" autoComplete="email" required />
-            <Input value={password} onChange={event => setPassword(event.target.value)} placeholder="Sua senha de acesso" type="password" autoComplete="current-password" />
-            <Button className="login-action" size="lg" disabled={loading || login.isPending} type="submit">
-              {loading || login.isPending ? <Loader2 className="animate-spin" /> : <MessageCircleMore />} Entrar no ChatForAll
-            </Button>
+            <div className="relative flex items-center">
+              <Mail className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={email}
+                onChange={event => setEmail(event.target.value)}
+                placeholder="Seu e-mail ou @apelido"
+                autoComplete="email"
+                required
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+              />
+            </div>
+
+            <div className="relative flex items-center">
+              <Lock className="absolute left-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                value={password}
+                onChange={event => setPassword(event.target.value)}
+                placeholder="Sua senha de acesso"
+                type="password"
+                autoComplete="current-password"
+                className="w-full h-12 pl-10 pr-3 rounded-xl bg-white dark:bg-[#0E1726] border border-slate-200 dark:border-[#1E2F4D] text-sm text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || login.isPending}
+              className="w-full h-12 rounded-xl bg-gradient-to-r from-[#0080EA] to-[#005bb5] hover:from-[#0070d0] hover:to-[#004f9f] text-white font-bold text-sm shadow-lg shadow-[#0080EA]/25 active:scale-[0.98] transition-all flex items-center justify-center gap-2 mt-1 cursor-pointer"
+            >
+              {loading || login.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <MessageCircleMore className="w-5 h-5" />}
+              <span>Entrar no ChatForAll</span>
+            </button>
           </>
         )}
       </form>
 
-      <div className="flex flex-col gap-2 w-full mt-2">
+      <div className="flex flex-col gap-2 w-full mt-3">
         <button
           type="button"
           onClick={() => setDownloadModalOpen(true)}
-          className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 transition-all cursor-pointer"
+          className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold bg-[#0080EA]/10 hover:bg-[#0080EA]/20 text-[#0080EA] dark:text-[#38BDF8] border border-[#0080EA]/25 transition-all cursor-pointer"
         >
-          <Smartphone className="w-4 h-4" /> Baixar APK oficial para Android
+          <Smartphone className="w-4 h-4" />
+          <span>Baixar APK oficial para Android</span>
         </button>
 
         {!isInstalled && (
@@ -223,19 +303,9 @@ function Welcome() {
         )}
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-200/50 dark:border-slate-800/50 flex items-center justify-between text-[11px] text-slate-400">
-        <span>ChatForAll Oficial · 100% Privado</span>
-        <button
-          type="button"
-          className="text-slate-400 hover:text-red-500 hover:underline cursor-pointer"
-          onClick={() => {
-            if (window.confirm("Atenção: Deseja apagar todas as conversas e zerar os dados de teste do banco de dados?")) {
-              resetMutation?.mutate?.();
-            }
-          }}
-        >
-          Zerar banco de dados
-        </button>
+      <div className="mt-5 pt-3 border-t border-slate-200/60 dark:border-[#1E2F4D]/60 flex items-center justify-center gap-1.5 text-xs text-slate-400">
+        <ShieldCheck className="w-3.5 h-3.5 text-[#0080EA]" />
+        <span>ChatForAll Oficial · Conexão Segura & Criptografada</span>
       </div>
     </section>
 
@@ -439,17 +509,55 @@ export default function Home() {
 
   return <div className="app-shell">
     <aside className={cn("sidebar", !sidebarOpen && "mobile-hidden")}>
-      <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/icon-192.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Convidar amigo por link" onClick={() => setInviteModalOpen(true)} title="Convidar amigo com link pessoal"><UserPlus className="w-5 h-5 text-emerald-600 dark:text-emerald-400" /></button><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
+      <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/icon-192.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Convidar amigo por link" onClick={() => setInviteModalOpen(true)} title="Convidar amigo com link pessoal"><UserPlus className="w-5 h-5 text-[#0080EA] dark:text-[#38BDF8]" /></button><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
       <button className="account-card" onClick={() => setProfileOpen(true)}><Avatar name={profile.data.name} url={profile.data.avatarUrl} /><span><strong>{profile.data.name}</strong><small>{profile.data.status || "Disponível"}</small></span><MoreHorizontal /></button>
       <div className="sidebar-search"><Search /><Input placeholder="Pesquisar conversas" onChange={event => { const term = event.target.value.toLowerCase(); if (!term) return; const match = conversations.data?.find(item => item.participant?.name?.toLowerCase().includes(term)); if (match) setSelectedId(match.id); }} /></div>
       <div className="conversation-list">{conversations.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando conversas</div>}{!conversations.isLoading && !conversations.data?.length && <div className="clean-empty"><MessageCircleMore /><strong>Suas conversas começam aqui.</strong><span>Crie uma nova conversa para falar com alguém da família.</span><Button variant="outline" onClick={() => setNewChatOpen(true)}><UserRoundPlus /> Nova conversa</Button></div>}{conversations.data?.map(conversation => <button key={conversation.id} className={cn("conversation-row", selectedId === conversation.id && "active", conversation.unreadCount > 0 && "unread")} onClick={() => chooseConversation(conversation.id)}><Avatar name={conversation.participant?.name || conversation.title} url={conversation.participant?.avatarUrl} /><span className="conversation-copy"><span><strong>{conversation.participant?.name || conversation.title || "Conversa"}</strong><time>{formatTime(conversation.latestMessage?.createdAt)}</time></span><span><small>{conversation.latestMessage?.deletedAt ? "Mensagem apagada" : conversation.latestMessage?.messageType === "image" ? "Imagem" : conversation.latestMessage?.messageType === "audio" ? "Mensagem de voz" : conversation.latestMessage?.messageType === "file" ? "Documento" : conversation.latestMessage?.content || "Conversa iniciada"}</small>{conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}</span></span></button>)}</div>
-      <footer className="sidebar-footer">
-        <button className="install-btn bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20" onClick={() => setDownloadApkOpen(true)} title="Baixar APK oficial para Android"><Smartphone className="w-4 h-4" /> Baixar APK</button>
-        <button onClick={() => setInviteModalOpen(true)} title="Convidar amigos"><UserPlus className="w-4 h-4" /> Convidar</button>
-        <button onClick={requestNotification}><Bell /> Notificações</button>
-        <button onClick={toggleTheme}>{theme === "dark" ? <Sun /> : <Moon />} {theme === "dark" ? "Modo claro" : "Modo escuro"}</button>
-        <button onClick={() => { if (window.confirm('Atenção: Deseja apagar todas as conversas e zerar os dados de teste do banco?')) resetData.mutate(); }} className='text-red-500/80 hover:text-red-500' title='Zerar banco de dados'><Trash2 className='w-4 h-4' /> Zerar banco</button>
-        <button onClick={() => logout()}><LogOut /> Sair</button>
+      <footer className="sidebar-footer px-3 py-2 border-t border-[var(--line)] bg-[var(--surface)] flex items-center justify-between gap-1 overflow-x-auto">
+        <button
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-[#0080EA]/10 hover:bg-[#0080EA]/20 text-[#0080EA] dark:text-[#38BDF8] font-bold text-xs border border-[#0080EA]/20 whitespace-nowrap transition-all cursor-pointer"
+          onClick={() => setDownloadApkOpen(true)}
+          title="Baixar APK oficial para Android"
+        >
+          <Smartphone className="w-3.5 h-3.5" />
+          <span>APK</span>
+        </button>
+
+        <button
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] font-semibold text-xs whitespace-nowrap transition-all cursor-pointer"
+          onClick={() => setInviteModalOpen(true)}
+          title="Convidar amigos para o chat"
+        >
+          <UserPlus className="w-3.5 h-3.5 text-[#0080EA]" />
+          <span>Convidar</span>
+        </button>
+
+        <button
+          className="p-2 rounded-xl hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] transition-all flex items-center justify-center cursor-pointer"
+          onClick={requestNotification}
+          title="Notificações"
+          aria-label="Notificações"
+        >
+          <Bell className="w-4 h-4" />
+        </button>
+
+        <button
+          className="p-2 rounded-xl hover:bg-[var(--surface-soft)] text-[var(--muted)] hover:text-[var(--ink)] transition-all flex items-center justify-center cursor-pointer"
+          onClick={toggleTheme}
+          title={theme === "dark" ? "Ativar Modo Claro" : "Ativar Modo Escuro"}
+          aria-label="Alternar tema"
+        >
+          {theme === "dark" ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
+        </button>
+
+        <button
+          className="p-2 rounded-xl hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-all flex items-center justify-center cursor-pointer"
+          onClick={() => logout()}
+          title="Sair da conta"
+          aria-label="Sair da conta"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </footer>
     </aside>
 
@@ -458,7 +566,7 @@ export default function Home() {
       <div className="message-scroll" ref={scroll}>{history.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando mensagens</div>}<button className="load-more" onClick={loadOlder} style={{ display: nextOlderCursor ? "block" : "none" }}>Carregar mensagens anteriores</button>{displayedMessages.length === 0 && !history.isLoading && <div className="conversation-empty"><MessageCircleMore /><span>Nenhuma mensagem ainda.</span><small>Envie a primeira mensagem para iniciar a conversa.</small></div>}{displayedMessages.map(message => <MessageBubble key={message.id} message={message} currentUserId={user?.id} onReply={setReply} onDeleteMe={id => deleteMe.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate() })} onDeleteAll={id => deleteAll.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate(), onError: error => toast.error(error.message) })} />)}{typing.data?.map(entry => <div key={entry.userId} className="typing-indicator"><span /><span /><span /> {entry.name} está digitando...</div>)}</div>
       <div className="composer-area">{reply && <div className="reply-bar"><MessageCircleMore /><span>Respondendo a <strong>{reply.senderName || "mensagem"}</strong><small>{reply.content || "Mídia"}</small></span><button onClick={() => setReply(null)}><X /></button></div>}{image && <ImagePreview source={image} onCancel={() => setImage(null)} onSend={caption => submit(caption, image)} />}{recording ? <div className="recording-bar"><button onClick={() => stopRecord(true)} aria-label="Cancelar gravação"><Trash2 /></button><span><i /> Solte para enviar · {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, "0")}</span><Button size="icon" onClick={() => stopRecord(false)}><SendHorizonal /></Button></div> : <div className="composer"><Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
   <PopoverTrigger asChild>
-    <button type="button" aria-label="Teclado de Emojis Divertidos" className="hover:text-emerald-600 transition-colors">
+    <button type="button" aria-label="Teclado de Emojis Divertidos" className="hover:text-[#0080EA] transition-colors">
       <Smile />
     </button>
   </PopoverTrigger>

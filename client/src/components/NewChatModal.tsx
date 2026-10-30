@@ -79,12 +79,12 @@ export function NewChatModal({ isOpen, onClose, onSelectConversation }: NewChatM
           <DialogTitle className="text-xl font-bold flex items-center gap-2">
             {tab === "direct" ? (
               <>
-                <MessageSquare className="w-5 h-5 text-emerald-600" />
+                <MessageSquare className="w-5 h-5 text-[#0080EA]" />
                 Nova Conversa
               </>
             ) : (
               <>
-                <Users className="w-5 h-5 text-emerald-600" />
+                <Users className="w-5 h-5 text-[#0080EA]" />
                 Novo Grupo da Família
               </>
             )}
@@ -101,7 +101,7 @@ export function NewChatModal({ isOpen, onClose, onSelectConversation }: NewChatM
             onClick={() => setTab("direct")}
             className={`py-2 text-xs font-semibold rounded-lg transition-all ${
               tab === "direct"
-                ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-white shadow-sm"
+                ? "bg-white dark:bg-slate-700 text-[#0080EA] dark:text-white shadow-sm"
                 : "text-slate-500 hover:text-slate-900"
             }`}
           >
@@ -112,7 +112,7 @@ export function NewChatModal({ isOpen, onClose, onSelectConversation }: NewChatM
             onClick={() => setTab("group")}
             className={`py-2 text-xs font-semibold rounded-lg transition-all ${
               tab === "group"
-                ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-white shadow-sm"
+                ? "bg-white dark:bg-slate-700 text-[#0080EA] dark:text-white shadow-sm"
                 : "text-slate-500 hover:text-slate-900"
             }`}
           >
@@ -212,7 +212,7 @@ export function NewChatModal({ isOpen, onClose, onSelectConversation }: NewChatM
             <Button
               type="submit"
               disabled={groupMutation.isPending || selectedUsers.length === 0}
-              className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold mt-2"
+              className="w-full h-10 bg-[#0080EA] hover:bg-[#0060B8] text-white rounded-xl text-xs font-semibold mt-2"
             >
               {groupMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Criar Grupo Familiar"}
             </Button>

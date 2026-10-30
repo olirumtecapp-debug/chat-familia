@@ -82,7 +82,7 @@ export function ProfileModal({ isOpen, onClose, currentUser }: ProfileModalProps
       <DialogContent className="sm:max-w-[420px] max-h-[92vh] overflow-y-auto p-5 sm:p-6 rounded-2xl shadow-xl">
         <DialogHeader className="text-left pb-1">
           <DialogTitle className="text-lg font-bold flex items-center gap-2">
-            <UserCog className="w-5 h-5 text-emerald-600" />
+            <UserCog className="w-5 h-5 text-[#0080EA]" />
             <span>Editar Meu Perfil</span>
           </DialogTitle>
           <DialogDescription className="text-xs text-slate-500">
@@ -103,7 +103,7 @@ export function ProfileModal({ isOpen, onClose, currentUser }: ProfileModalProps
             />
 
             <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-              <div className="w-20 h-20 rounded-full overflow-hidden ring-4 ring-emerald-500 shadow-md ring-offset-2 bg-white dark:bg-slate-800">
+              <div className="w-20 h-20 rounded-full overflow-hidden ring-4 ring-[#0080EA] shadow-md ring-offset-2 bg-white dark:bg-slate-800">
                 <img
                   src={avatarUrl}
                   alt="Foto do Perfil"
@@ -123,7 +123,7 @@ export function ProfileModal({ isOpen, onClose, currentUser }: ProfileModalProps
                   e.stopPropagation();
                   fileInputRef.current?.click();
                 }}
-                className="absolute bottom-0 right-0 p-1.5 bg-emerald-600 text-white rounded-full shadow-md hover:bg-emerald-700 transition-colors border-2 border-white dark:border-slate-900"
+                className="absolute bottom-0 right-0 p-1.5 bg-[#0080EA] text-white rounded-full shadow-md hover:bg-[#0060B8] transition-colors border-2 border-white dark:border-slate-900"
                 title="Escolher foto do computador"
               >
                 <Camera className="w-3.5 h-3.5" />
@@ -138,7 +138,7 @@ export function ProfileModal({ isOpen, onClose, currentUser }: ProfileModalProps
                 size="sm"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isProcessingImage}
-                className="h-8 text-xs font-semibold rounded-xl border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950 flex items-center gap-1.5 cursor-pointer"
+                className="h-8 text-xs font-semibold rounded-xl border-emerald-300 dark:border-emerald-800 text-[#0060B8] dark:text-emerald-300 hover:bg-blue-50 dark:hover:bg-emerald-950 flex items-center gap-1.5 cursor-pointer"
               >
                 {isProcessingImage ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -164,7 +164,7 @@ export function ProfileModal({ isOpen, onClose, currentUser }: ProfileModalProps
             </div>
 
             {isCustomPhoto ? (
-              <span className="text-[11px] font-medium text-emerald-600 mt-1 flex items-center gap-1">
+              <span className="text-[11px] font-medium text-[#0080EA] mt-1 flex items-center gap-1">
                 <ImageIcon className="w-3 h-3" /> Foto Real Ativa
               </span>
             ) : (
@@ -188,7 +188,7 @@ export function ProfileModal({ isOpen, onClose, currentUser }: ProfileModalProps
                   title={p.label}
                   className={`w-9 h-9 rounded-full transition-all flex items-center justify-center cursor-pointer ${
                     avatarUrl === p.url
-                      ? "ring-3 ring-emerald-600 scale-105 shadow-sm z-10"
+                      ? "ring-3 ring-[#0080EA] scale-105 shadow-sm z-10"
                       : "opacity-75 hover:opacity-100 hover:scale-105"
                   }`}
                 >
@@ -230,7 +230,7 @@ export function ProfileModal({ isOpen, onClose, currentUser }: ProfileModalProps
             <Button
               type="submit"
               disabled={updateMutation.isPending || isProcessingImage}
-              className="w-full h-10 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold shadow-md cursor-pointer"
+              className="w-full h-10 bg-[#0080EA] hover:bg-[#0060B8] text-white rounded-xl text-sm font-semibold shadow-md cursor-pointer"
             >
               {updateMutation.isPending ? (
                 <>

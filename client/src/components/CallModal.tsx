@@ -368,8 +368,8 @@ export function CallModal({
 
           {/* Cabeçalho da Chamada */}
           <div className="relative z-10 text-center pt-4">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs text-emerald-400 font-semibold mb-3">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-xs text-[#38BDF8] font-semibold mb-3">
+              <span className="w-2 h-2 rounded-full bg-[#38BDF8] animate-pulse" />
               {callType === "video" ? "Vídeo-Chamada Familiar" : "Chamada de Voz da Família"}
             </div>
 
@@ -377,7 +377,7 @@ export function CallModal({
             {(callType === "audio" || callStatus !== "connected") && (
               <div className="flex flex-col items-center justify-center my-4">
                 <div
-                  className={`relative w-28 h-28 rounded-full overflow-hidden border-4 border-emerald-500 shadow-2xl ${
+                  className={`relative w-28 h-28 rounded-full overflow-hidden border-4 border-[#0080EA] shadow-2xl ${
                     callStatus === "ringing" ? "animate-bounce" : ""
                   }`}
                 >
@@ -406,7 +406,7 @@ export function CallModal({
               <div className="flex items-center gap-6">
                 <button
                   onClick={handleAnswerCall}
-                  className="w-16 h-16 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg flex flex-col items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+                  className="w-16 h-16 rounded-full bg-[#0080EA] hover:bg-[#0080EA] text-white shadow-lg flex flex-col items-center justify-center transition-transform hover:scale-105 active:scale-95 cursor-pointer"
                   title="Atender Chamada"
                 >
                   <Phone className="w-7 h-7" />

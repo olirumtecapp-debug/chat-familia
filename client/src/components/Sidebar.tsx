@@ -68,14 +68,14 @@ export function Sidebar({
           <img
             src={currentUserAvatar}
             alt={currentUserName}
-            className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500 shadow-sm"
+            className="w-10 h-10 rounded-full object-cover ring-2 ring-[#0080EA] shadow-sm"
           />
           <div className="min-w-0">
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 truncate flex items-center gap-1">
               {currentUserName}
               <Heart className="w-3 h-3 fill-rose-500 text-rose-500 inline shrink-0" />
             </h3>
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Online na família</p>
+            <p className="text-[11px] text-[#0080EA] dark:text-[#38BDF8] font-medium">Online na família</p>
           </div>
         </div>
 
@@ -92,7 +92,7 @@ export function Sidebar({
             className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition cursor-pointer"
             title="Nova conversa ou grupo"
           >
-            <MessageSquarePlus className="w-5 h-5 text-emerald-600" />
+            <MessageSquarePlus className="w-5 h-5 text-[#0080EA]" />
           </button>
           <button
             onClick={onOpenProfile}
@@ -129,12 +129,12 @@ export function Sidebar({
         <div className="px-3 py-2 bg-slate-50/70 dark:bg-[#182229] border-b border-slate-100 dark:border-slate-800/60 shrink-0">
           <div className="flex items-center justify-between mb-1.5 px-0.5">
             <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <Heart className="w-3 h-3 text-emerald-500 fill-emerald-500" />
+              <Heart className="w-3 h-3 text-[#0080EA] fill-emerald-500" />
               Familiares Conectados ({otherUsers.length})
             </span>
             <button
               onClick={onOpenNewChat}
-              className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 cursor-pointer"
+              className="text-[11px] font-semibold text-[#0080EA] hover:text-[#0060B8] cursor-pointer"
             >
               + Novo Grupo
             </button>
@@ -153,11 +153,11 @@ export function Sidebar({
                   <img
                     src={u.avatarUrl || DEFAULT_AVATAR}
                     alt={u.name || "Parente"}
-                    className="w-10 h-10 rounded-full object-cover ring-2 ring-emerald-500/80 group-hover:scale-105 group-hover:ring-emerald-600 transition shadow-xs"
+                    className="w-10 h-10 rounded-full object-cover ring-2 ring-[#0080EA]/80 group-hover:scale-105 group-hover:ring-[#0080EA] transition shadow-xs"
                   />
-                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 border-2 border-white dark:border-[#182229] rounded-full" />
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-[#0080EA] border-2 border-white dark:border-[#182229] rounded-full" />
                 </div>
-                <span className="text-[10px] font-medium text-slate-700 dark:text-slate-300 max-w-[54px] truncate text-center group-hover:text-emerald-600">
+                <span className="text-[10px] font-medium text-slate-700 dark:text-slate-300 max-w-[54px] truncate text-center group-hover:text-[#0080EA]">
                   {u.name?.split(" ")[0] || "Parente"}
                 </span>
               </button>
@@ -170,7 +170,7 @@ export function Sidebar({
       <div className="flex-1 min-h-0 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/40 overscroll-contain">
         {filtered.length === 0 ? (
           <div className="p-6 text-center text-slate-400 space-y-4">
-            <div className="w-12 h-12 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+            <div className="w-12 h-12 bg-blue-100 dark:bg-emerald-950/40 text-[#0080EA] rounded-2xl flex items-center justify-center mx-auto shadow-xs">
               <Users className="w-6 h-6" />
             </div>
             <div>
@@ -189,7 +189,7 @@ export function Sidebar({
                     key={u.id}
                     onClick={() => startDirectMutation.mutate({ targetUserId: u.id })}
                     disabled={startDirectMutation.isPending}
-                    className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-emerald-50 transition border border-slate-100 dark:border-slate-700 cursor-pointer"
+                    className="w-full flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-blue-50 transition border border-slate-100 dark:border-slate-700 cursor-pointer"
                   >
                     <img
                       src={u.avatarUrl || DEFAULT_AVATAR}
@@ -200,7 +200,7 @@ export function Sidebar({
                       <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{u.name}</p>
                       <p className="text-[10px] text-slate-400 truncate">{u.statusMessage || "Disponível"}</p>
                     </div>
-                    <span className="text-[11px] font-bold text-emerald-600">Conversar</span>
+                    <span className="text-[11px] font-bold text-[#0080EA]">Conversar</span>
                   </button>
                 ))}
               </div>
@@ -241,7 +241,7 @@ export function Sidebar({
                     className="w-12 h-12 rounded-full object-cover ring-1 ring-slate-200"
                   />
                   {isGroup && (
-                    <span className="absolute -bottom-1 -right-1 bg-emerald-600 text-white p-0.5 rounded-full ring-2 ring-white dark:ring-[#111b21]">
+                    <span className="absolute -bottom-1 -right-1 bg-[#0080EA] text-white p-0.5 rounded-full ring-2 ring-white dark:ring-[#111b21]">
                       <Users className="w-2.5 h-2.5" />
                     </span>
                   )}
@@ -261,7 +261,7 @@ export function Sidebar({
                     </p>
 
                     {conv.unreadCount > 0 && (
-                      <span className="bg-emerald-600 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                      <span className="bg-[#0080EA] text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full shrink-0">
                         {conv.unreadCount}
                       </span>
                     )}

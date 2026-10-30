@@ -88,7 +88,7 @@ export function GroupMembersModal({
               <img
                 src={groupAvatar || GROUP_AVATAR}
                 alt={groupName}
-                className="w-12 h-12 rounded-full object-cover ring-2 ring-emerald-500 shadow-sm"
+                className="w-12 h-12 rounded-full object-cover ring-2 ring-[#0080EA] shadow-sm"
               />
               <div className="min-w-0 flex-1">
                 <DialogTitle className="text-lg font-bold text-slate-800 dark:text-white truncate">
@@ -105,7 +105,7 @@ export function GroupMembersModal({
           <div className="space-y-3 pt-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-emerald-600" />
+                <Users className="w-3.5 h-3.5 text-[#0080EA]" />
                 Membros do Grupo ({members.length})
               </span>
             </div>
@@ -132,7 +132,7 @@ export function GroupMembersModal({
                             {member.name || "Membro da Família"}
                           </p>
                           {isSelf && (
-                            <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.5 rounded-full">
+                            <span className="text-[10px] font-bold bg-blue-100 text-[#0060B8] dark:bg-emerald-950 dark:text-emerald-300 px-1.5 py-0.5 rounded-full">
                               Você
                             </span>
                           )}
@@ -167,7 +167,7 @@ export function GroupMembersModal({
           {availableUsersToAdd.length > 0 && (
             <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
               <span className="text-xs font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <UserPlus className="w-3.5 h-3.5 text-emerald-600" />
+                <UserPlus className="w-3.5 h-3.5 text-[#0080EA]" />
                 Adicionar Outro Familiar ao Grupo
               </span>
 
@@ -197,7 +197,7 @@ export function GroupMembersModal({
                         })
                       }
                       disabled={addMemberMutation.isPending}
-                      className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-medium"
+                      className="h-7 px-2.5 bg-[#0080EA] hover:bg-[#0060B8] text-white rounded-lg text-xs font-medium"
                     >
                       + Adicionar
                     </Button>
