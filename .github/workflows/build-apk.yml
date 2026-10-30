@@ -40,6 +40,7 @@ jobs:
         run: |
           VERSION_NAME=$(grep 'versionName' android/app/build.gradle | head -n 1 | awk -F'"' '{print $2}')
           echo "Building ChatForAll version: $VERSION_NAME"
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
           mkdir -p release-apk
           mkdir -p client/public
           mkdir -p dist/public
@@ -61,7 +62,7 @@ jobs:
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ChatForAll-APK-v1.0.0
+          name: ChatForAll-APK
           path: release-apk/*
           retention-days: 30
 

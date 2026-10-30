@@ -38,11 +38,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Deep link support for chat-familia.vercel.app -->
+            <!-- Deep link support for chat.creativeam.com.br and chat-familia.vercel.app -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="chat.creativeam.com.br" />
                 <data
                     android:scheme="https"
                     android:host="chat-familia.vercel.app" />

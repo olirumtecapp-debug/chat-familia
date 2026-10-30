@@ -23,7 +23,7 @@ export function InviteModal({ open, onOpenChange, currentUserName, currentUserEm
     .replace(/[^a-z0-9_-]/g, "");
 
   // Link mágico amigável
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://chat-familia.vercel.app";
+  const origin = typeof window !== "undefined" ? window.location.origin : "https://chat.creativeam.com.br";
   const inviteLink = `${origin}/?u=${encodeURIComponent(username)}`;
 
   const handleCopy = () => {

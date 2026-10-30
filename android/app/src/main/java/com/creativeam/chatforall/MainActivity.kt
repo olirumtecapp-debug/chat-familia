@@ -26,7 +26,7 @@ class MainActivity : AppCompatActivity() {
     private var fileUploadCallback: ValueCallback<Array<Uri>>? = null
 
     companion object {
-        const val APP_URL = "https://chat-familia.vercel.app"
+        const val APP_URL = "https://chat.creativeam.com.br"
     }
 
     private val filePickerLauncher = registerForActivityResult(
@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
         setupBackNavigation()
 
         val intentUrl = intent?.data?.toString()
-        val targetUrl = if (!intentUrl.isNullOrEmpty() && intentUrl.startsWith(APP_URL)) {
+        val targetUrl = if (!intentUrl.isNullOrEmpty() && (intentUrl.startsWith(APP_URL) || intentUrl.startsWith("https://chat-familia.vercel.app"))) {
             intentUrl
         } else {
             APP_URL
@@ -131,7 +131,7 @@ class MainActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
                 val url = request?.url?.toString() ?: return false
                 return if (url.startsWith("http://") || url.startsWith("https://")) {
-                    if (url.contains("chat-familia.vercel.app")) {
+                    if (url.contains("chat.creativeam.com.br") || url.contains("chat-familia.vercel.app")) {
                         false
                     } else {
                         val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(url))

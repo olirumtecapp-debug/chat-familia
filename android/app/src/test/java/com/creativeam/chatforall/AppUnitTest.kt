@@ -6,6 +6,6 @@ import org.junit.Assert.*
 class AppUnitTest {
     @Test
     fun appUrlIsCorrect() {
-        assertEquals("https://chat-familia.vercel.app", MainActivity.APP_URL)
+        assertEquals("https://chat.creativeam.com.br", MainActivity.APP_URL)
     }
 }
