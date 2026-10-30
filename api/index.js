@@ -1282,21 +1282,6 @@ var appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
-    debugQuery: publicProcedure.query(async () => {
-      const database = await requireDatabase();
-      try {
-        const res = await database.select().from(users).limit(1);
-        return { ok: true, res };
-      } catch (err) {
-        return {
-          ok: false,
-          message: err.message,
-          code: err.code,
-          sqlMessage: err.sqlMessage || err.cause?.sqlMessage || err.cause?.message,
-          cause: String(err.cause || err)
-        };
-      }
-    }),
     localLogin: publicProcedure.input(z6.object({
       name: z6.string().trim().min(2).max(120),
       email: z6.string().trim().email().max(320),
