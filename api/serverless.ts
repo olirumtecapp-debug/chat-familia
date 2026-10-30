@@ -17,7 +17,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 
-app.get("/api/calls/ice", async (req, res) => {
+app.get("/api/calls/ice", async (req: any, res: any) => {
   try {
     const user = await sdk.authenticateRequest(req);
     const sharedSecret = process.env.TURN_SHARED_SECRET;
@@ -39,7 +39,7 @@ app.get("/api/calls/ice", async (req, res) => {
   }
 });
 
-app.get("/api/realtime/stream", async (req, res) => {
+app.get("/api/realtime/stream", async (req: any, res: any) => {
   try {
     const user = await sdk.authenticateRequest(req);
     res.setHeader("Content-Type", "text/event-stream");

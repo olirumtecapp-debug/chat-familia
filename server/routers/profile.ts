@@ -73,6 +73,6 @@ export const profileRouter = router({
         .where(whereClause)
         .orderBy(desc(users.lastSeen))
         .limit(50);
-      return results.map(user => ({ ...user, online: isOnline(user.lastSeen) }));
+      return results.map((user: any) => ({ ...user, online: isOnline(user.lastSeen) }));
     }),
 });
