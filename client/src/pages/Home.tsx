@@ -1411,19 +1411,7 @@ export default function Home() {
   const displayedMessages = useMemo(() => [...olderMessages, ...(history.data?.messages || [])].filter((message, index, list) => list.findIndex(item => item.id === message.id) === index).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()), [olderMessages, history.data?.messages]);
 
   if (loading || (isAuthenticated && profile.isLoading && !profile.isError)) return <div className="loading-screen"><Loader2 className="animate-spin" /></div>;
-  if (isAuthenticated && profile.isError) {
-    return (
-      <div className="loading-screen flex flex-col items-center justify-center gap-4 p-6 text-center">
-        <p className="text-sm text-slate-300">Não foi possível carregar sua sessão.</p>
-        <div className="flex gap-3">
-          <Button onClick={() => window.location.reload()} variant="outline" className="border-slate-700 text-white">Tentar novamente</Button>
-          <Button onClick={() => logout()} className="bg-[#0080EA] text-white">Sair da conta</Button>
-        </div>
-      </div>
-    );
-  }
-  if (!isAuthenticated) return <Welcome />;
-  if (!profile.data?.isComplete) return <Onboarding onDone={() => profile.refetch()} />;
+  if (!isAuthenticated || profile.isError || !profile.data) return <Welcome />;
 
   const chooseConversation = (conversationId: number, contactName?: string) => { setSelectedId(conversationId); setSidebarOpen(false); if (contactName) setPendingContact({ name: contactName }); utils.messaging.list.invalidate(); };
   const loadOlder = async () => { if (!selectedId || !nextOlderCursor) return; try { const page = await utils.messaging.history.fetch({ conversationId: selectedId, cursor: nextOlderCursor }); setOlderMessages(existing => [...page.messages, ...existing]); setNextOlderCursor(page.nextCursor); } catch { toast.error("Não foi possível carregar mensagens anteriores."); } };
