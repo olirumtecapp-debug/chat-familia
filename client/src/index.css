@@ -269,7 +269,7 @@ input::placeholder, textarea::placeholder {
   gap: 6px;
 }
 
-.header-tools button, .call-actions button, .composer > button, .chat-header > button:not(.chat-person), .reply-bar > button, .recording-bar > button {
+.header-tools button, .call-actions button, .composer > button:not(.send-btn), .chat-header > button:not(.chat-person), .reply-bar > button, .recording-bar > button {
   border: 0;
   background: transparent;
   color: var(--ink);
@@ -281,7 +281,7 @@ input::placeholder, textarea::placeholder {
   transition: all 0.15s ease;
 }
 
-.header-tools button:hover, .call-actions button:hover, .composer > button:hover, .chat-header > button:not(.chat-person):hover {
+.header-tools button:hover, .call-actions button:hover, .composer > button:not(.send-btn):hover, .chat-header > button:not(.chat-person):hover {
   background: var(--surface-soft);
   color: var(--accent);
 }
@@ -1035,4 +1035,57 @@ input::placeholder, textarea::placeholder {
 }
 .dark .chat-header > button:not(.chat-person), .dark .call-actions button {
   color: #f1f5f9 !important;
+}
+
+
+/* Bulletproof Send Button */
+.composer > button.send-btn,
+button.send-btn {
+  background: #0080EA !important;
+  color: #ffffff !important;
+  width: 42px !important;
+  height: 42px !important;
+  min-width: 42px !important;
+  min-height: 42px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-shadow: 0 4px 14px rgba(0, 128, 234, 0.4) !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+  border: none !important;
+  padding: 0 !important;
+  flex-shrink: 0 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.composer > button.send-btn:hover,
+button.send-btn:hover {
+  background: #0060B8 !important;
+  transform: scale(1.05);
+}
+
+.composer > button.send-btn:active,
+button.send-btn:active {
+  transform: scale(0.95);
+}
+
+.composer > button.send-btn svg,
+button.send-btn svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+  fill: none !important;
+  width: 20px !important;
+  height: 20px !important;
+  display: block !important;
+}
+
+.composer > button.send-btn:disabled,
+button.send-btn:disabled {
+  background: #0080EA !important;
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
 }
