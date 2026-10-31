@@ -272,7 +272,7 @@ input::placeholder, textarea::placeholder {
 .header-tools button, .call-actions button, .composer > button, .chat-header > button:not(.chat-person), .reply-bar > button, .recording-bar > button {
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: var(--ink);
   width: 38px;
   height: 38px;
   border-radius: 12px;
@@ -1011,4 +1011,28 @@ input::placeholder, textarea::placeholder {
   box-shadow: none !important;
   border: none !important;
   padding: 4px 8px !important;
+}
+
+/* Ocultar barras de rolagem feias em todos os navegadores */
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+.composer > button {
+  color: #1e293b !important;
+}
+.dark .composer > button {
+  color: #f1f5f9 !important;
+}
+.chat-header > button:not(.chat-person), .call-actions button {
+  color: #1e293b !important;
+}
+.dark .chat-header > button:not(.chat-person), .dark .call-actions button {
+  color: #f1f5f9 !important;
 }

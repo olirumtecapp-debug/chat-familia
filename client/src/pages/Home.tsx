@@ -486,7 +486,7 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="profile-dialog sm:max-w-md bg-[var(--surface)] border border-[var(--line)] text-[var(--ink)] shadow-2xl rounded-3xl p-6">
+      <DialogContent className="profile-dialog sm:max-w-md bg-[var(--surface)] border border-[var(--line)] text-[var(--ink)] shadow-2xl rounded-3xl p-5 max-h-[90vh] overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         <DialogHeader className="space-y-1">
           <DialogTitle className="text-xl font-bold text-[var(--ink)]">Meu Perfil</DialogTitle>
           <DialogDescription className="text-sm text-[var(--muted)]">
@@ -627,16 +627,41 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
             />
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-[var(--ink)] block">Status / Recado</label>
-            <Textarea
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[var(--ink)] block">Status / Recado (WhatsApp)</label>
+            <Input
               value={status}
-              maxLength={280}
+              maxLength={120}
               onChange={event => setStatus(event.target.value)}
-              placeholder="Ex: Disponível, Na estrada, Em reunião..."
-              rows={2}
-              className="bg-[var(--surface-soft)] border-[var(--line)] text-[var(--ink)] resize-none text-sm"
+              placeholder="Digite seu recado ou status..."
+              className="bg-[var(--surface-soft)] border-[var(--line)] text-[var(--ink)] text-sm h-10"
             />
+            <div className="flex flex-wrap gap-1.5 pt-1">
+              {[
+                { label: "Disponível", icon: "🚀", text: "🚀 Disponível" },
+                { label: "Ocupado", icon: "🔴", text: "🔴 Ocupado" },
+                { label: "Em reunião", icon: "💼", text: "💼 Em reunião" },
+                { label: "Jogando", icon: "🎮", text: "🎮 Jogando" },
+                { label: "Bateria fraca", icon: "🔋", text: "🔋 Bateria acabando" },
+                { label: "Dormindo", icon: "😴", text: "😴 Dormindo" },
+                { label: "Viajando", icon: "✈️", text: "✈️ Viajando" },
+                { label: "Com a família", icon: "❤️", text: "❤️ Com a família" },
+              ].map(preset => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => setStatus(preset.text)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer border ${
+                    status === preset.text
+                      ? "bg-[#0080EA] text-white border-[#0080EA] shadow-sm"
+                      : "bg-[var(--surface-soft)] text-[var(--ink)] border-[var(--line)] hover:bg-[#0080EA]/10 hover:border-[#0080EA]/30"
+                  }`}
+                >
+                  <span>{preset.icon}</span>
+                  <span>{preset.label}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--line)]">
@@ -1205,7 +1230,19 @@ export default function Home() {
 
   const chooseConversation = (conversationId: number, contactName?: string) => { setSelectedId(conversationId); setSidebarOpen(false); if (contactName) setPendingContact({ name: contactName }); utils.messaging.list.invalidate(); };
   const loadOlder = async () => { if (!selectedId || !nextOlderCursor) return; try { const page = await utils.messaging.history.fetch({ conversationId: selectedId, cursor: nextOlderCursor }); setOlderMessages(existing => [...page.messages, ...existing]); setNextOlderCursor(page.nextCursor); } catch { toast.error("Não foi possível carregar mensagens anteriores."); } };
-  const prepareImage = async (file?: File) => { if (!file) return; const isImage = file.type.startsWith("image/"); const isDocument = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/zip", "text/plain", "text/csv"].includes(file.type); if (!isImage && !isDocument) return toast.error("Formato não permitido. Use imagem, PDF, DOC, DOCX, ZIP ou texto."); try { setImage({ dataUrl: isImage ? await compressImage(file, 1600) : await readFile(file), name: file.name, kind: isImage ? "image" : "file" }); } catch { toast.error("Não foi possível preparar o arquivo."); } };
+  const prepareImage = async (file?: File) => {
+    if (!file) return;
+    const isGif = file.type === "image/gif";
+    const isImage = file.type.startsWith("image/");
+    const isDocument = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/zip", "text/plain", "text/csv"].includes(file.type);
+    if (!isImage && !isDocument) return toast.error("Formato não permitido. Use imagem, GIF, PDF, DOC, DOCX, ZIP ou texto.");
+    try {
+      const dataUrl = isGif ? await readFile(file) : (isImage ? await compressImage(file, 1600) : await readFile(file));
+      setImage({ dataUrl, name: file.name, kind: isImage ? "image" : "file" });
+    } catch {
+      toast.error("Não foi possível preparar o arquivo.");
+    }
+  };
   const submit = (caption = composer, media = image) => { if (!selectedId || send.isPending) return; send.mutate({ conversationId: selectedId, content: caption || undefined, replyToId: reply?.id, media: media ? { kind: media.kind, dataUrl: media.dataUrl, name: media.name } : undefined }); };
   const typingChange = (value: string) => { setComposer(value); if (!selectedId) return; setTyping.mutate({ conversationId: selectedId, active: Boolean(value.trim()) }); };
   const requestNotification = async () => { if (!("Notification" in window)) return toast.error("Este navegador não suporta notificações."); const permission = await Notification.requestPermission(); permission === "granted" ? toast.success("Notificações ativadas.") : toast.message("As notificações permanecem desativadas."); };
@@ -1518,10 +1555,10 @@ export default function Home() {
     }
   }}
 />
-<button type="button" aria-label="Anexar imagem ou documento" onClick={() => imageInput.current?.click()} className="p-2 text-slate-400 hover:text-slate-600 transition-colors shrink-0"><Paperclip className="w-5 h-5" /></button>
+<button type="button" aria-label="Anexar imagem, gif ou documento" onClick={() => imageInput.current?.click()} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0"><Paperclip className="w-5 h-5" /></button>
 <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} />
-<button type="button" aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }} className="p-2 text-slate-400 hover:text-slate-600 transition-colors shrink-0"><Mic className="w-5 h-5" /></button>
-<Button size="icon" aria-label="Enviar mensagem" disabled={send.isPending || (!composer.trim() && !image)} onClick={() => submit()} className="rounded-full w-10 h-10 bg-[#0080EA] hover:bg-[#0060B8] shrink-0">{send.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : <SendHorizonal className="w-4 h-4 text-white" />}</Button></div>}</div>
+<button type="button" aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0"><Mic className="w-5 h-5" /></button>
+<Button size="icon" aria-label="Enviar mensagem" disabled={send.isPending || (!composer.trim() && !image)} onClick={() => submit()} className="rounded-full w-10 h-10 bg-[#0080EA] hover:bg-[#0060B8] active:scale-95 text-white flex items-center justify-center shrink-0 shadow-md shadow-[#0080EA]/25 transition-all opacity-100 disabled:opacity-40">{send.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : <SendHorizonal className="w-4 h-4 text-white" />}</Button></div>}</div>
     </>}</main>
     <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><ContactActionModal target={contextTarget} onClose={() => setContextTarget(null)} onDeleted={() => setSelectedId(null)} />
     <GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />

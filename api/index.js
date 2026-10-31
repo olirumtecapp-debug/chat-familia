@@ -1100,6 +1100,77 @@ function registerOAuthRoutes(app2) {
   });
 }
 
+// server/storage.ts
+import fs2 from "fs";
+import path2 from "path";
+var IS_VERCEL2 = !!process.env.VERCEL;
+var MEDIA_DIR = IS_VERCEL2 ? "/tmp/media" : path2.resolve(process.cwd(), "server", "data", "media");
+function saveLocalMedia(key, buffer) {
+  const filePath = path2.join(MEDIA_DIR, key);
+  const dir = path2.dirname(filePath);
+  if (!fs2.existsSync(dir)) fs2.mkdirSync(dir, { recursive: true });
+  fs2.writeFileSync(filePath, buffer);
+}
+function getLocalMediaPath(key) {
+  const filePath = path2.join(MEDIA_DIR, key);
+  if (fs2.existsSync(filePath)) return filePath;
+  return null;
+}
+function getForgeConfig() {
+  const forgeUrl = ENV.forgeApiUrl;
+  const forgeKey = ENV.forgeApiKey;
+  if (!forgeUrl || !forgeKey) {
+    throw new Error(
+      "Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
+    );
+  }
+  return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
+}
+function normalizeKey(relKey) {
+  return relKey.replace(/^\/+/, "");
+}
+function appendHashSuffix(relKey) {
+  const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  const lastDot = relKey.lastIndexOf(".");
+  if (lastDot === -1) return `${relKey}_${hash}`;
+  return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
+}
+async function storagePut(relKey, data, contentType = "application/octet-stream") {
+  const key = appendHashSuffix(normalizeKey(relKey));
+  const buffer = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  try {
+    saveLocalMedia(key, buffer);
+  } catch (err) {
+    console.warn("[storage] Failed to save local media:", err);
+  }
+  if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+    try {
+      const { forgeUrl, forgeKey } = getForgeConfig();
+      const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
+      presignUrl.searchParams.set("path", key);
+      const presignResp = await fetch(presignUrl, {
+        headers: { Authorization: `Bearer ${forgeKey}` }
+      });
+      if (presignResp.ok) {
+        const { url: s3Url } = await presignResp.json();
+        if (s3Url) {
+          const blob = new Blob([buffer], { type: contentType });
+          await fetch(s3Url, {
+            method: "PUT",
+            headers: { "Content-Type": contentType },
+            body: blob
+          });
+        }
+      } else {
+        console.warn("[storage] Forge presign skipped:", presignResp.status);
+      }
+    } catch (err) {
+      console.warn("[storage] Remote upload skipped, using local media:", err);
+    }
+  }
+  return { key, url: `/manus-storage/${key}` };
+}
+
 // server/_core/storageProxy.ts
 function registerStorageProxy(app2) {
   app2.get("/manus-storage/*", async (req, res) => {
@@ -1108,8 +1179,17 @@ function registerStorageProxy(app2) {
       res.status(400).send("Missing storage key");
       return;
     }
+    try {
+      const localPath = getLocalMediaPath(key);
+      if (localPath) {
+        res.sendFile(localPath);
+        return;
+      }
+    } catch (err) {
+      console.warn("[StorageProxy] local read error:", err);
+    }
     if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-      res.status(500).send("Storage proxy not configured");
+      res.status(404).send("File not found");
       return;
     }
     try {
@@ -1122,14 +1202,12 @@ function registerStorageProxy(app2) {
         headers: { Authorization: `Bearer ${ENV.forgeApiKey}` }
       });
       if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
-        res.status(502).send("Storage backend error");
+        res.status(404).send("File not found on storage");
         return;
       }
       const { url } = await forgeResp.json();
       if (!url) {
-        res.status(502).send("Empty signed URL from backend");
+        res.status(404).send("Empty signed URL from backend");
         return;
       }
       res.set("Cache-Control", "no-store");
@@ -1469,54 +1547,6 @@ import { z as z4 } from "zod";
 
 // server/media.ts
 import { nanoid } from "nanoid";
-
-// server/storage.ts
-function getForgeConfig() {
-  const forgeUrl = ENV.forgeApiUrl;
-  const forgeKey = ENV.forgeApiKey;
-  if (!forgeUrl || !forgeKey) {
-    throw new Error(
-      "Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
-  }
-  return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
-}
-function normalizeKey(relKey) {
-  return relKey.replace(/^\/+/, "");
-}
-function appendHashSuffix(relKey) {
-  const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
-  const lastDot = relKey.lastIndexOf(".");
-  if (lastDot === -1) return `${relKey}_${hash}`;
-  return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
-}
-async function storagePut(relKey, data, contentType = "application/octet-stream") {
-  const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = appendHashSuffix(normalizeKey(relKey));
-  const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
-  presignUrl.searchParams.set("path", key);
-  const presignResp = await fetch(presignUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` }
-  });
-  if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
-  }
-  const { url: s3Url } = await presignResp.json();
-  if (!s3Url) throw new Error("Forge returned empty presign URL");
-  const blob = typeof data === "string" ? new Blob([data], { type: contentType }) : new Blob([data], { type: contentType });
-  const uploadResp = await fetch(s3Url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: blob
-  });
-  if (!uploadResp.ok) {
-    throw new Error(`Storage upload to S3 failed (${uploadResp.status})`);
-  }
-  return { key, url: `/manus-storage/${key}` };
-}
-
-// server/media.ts
 var MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 var MAX_AUDIO_BYTES = 12 * 1024 * 1024;
 var MAX_DOCUMENT_BYTES = 20 * 1024 * 1024;

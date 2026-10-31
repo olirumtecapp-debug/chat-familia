@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { getLocalMediaPath } from "../storage";
 import { ENV } from "./env";
 
 export function registerStorageProxy(app: Express) {
@@ -9,8 +10,20 @@ export function registerStorageProxy(app: Express) {
       return;
     }
 
+    // 1. Check local media storage first
+    try {
+      const localPath = getLocalMediaPath(key);
+      if (localPath) {
+        res.sendFile(localPath);
+        return;
+      }
+    } catch (err) {
+      console.warn("[StorageProxy] local read error:", err);
+    }
+
+    // 2. Fallback to Forge S3 if available
     if (!ENV.forgeApiUrl || !ENV.forgeApiKey) {
-      res.status(500).send("Storage proxy not configured");
+      res.status(404).send("File not found");
       return;
     }
 
@@ -26,15 +39,13 @@ export function registerStorageProxy(app: Express) {
       });
 
       if (!forgeResp.ok) {
-        const body = await forgeResp.text().catch(() => "");
-        console.error(`[StorageProxy] forge error: ${forgeResp.status} ${body}`);
-        res.status(502).send("Storage backend error");
+        res.status(404).send("File not found on storage");
         return;
       }
 
       const { url } = (await forgeResp.json()) as { url: string };
       if (!url) {
-        res.status(502).send("Empty signed URL from backend");
+        res.status(404).send("Empty signed URL from backend");
         return;
       }
 

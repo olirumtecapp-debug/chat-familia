@@ -1,8 +1,22 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uploads via Forge Server presigned URL to S3 (PUT direct).
-// Downloads return /manus-storage/{key} paths served via 307 redirect.
-
+import fs from "fs";
+import path from "path";
 import { ENV } from "./_core/env";
+
+const IS_VERCEL = !!process.env.VERCEL;
+const MEDIA_DIR = IS_VERCEL ? "/tmp/media" : path.resolve(process.cwd(), "server", "data", "media");
+
+export function saveLocalMedia(key: string, buffer: Buffer): void {
+  const filePath = path.join(MEDIA_DIR, key);
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(filePath, buffer);
+}
+
+export function getLocalMediaPath(key: string): string | null {
+  const filePath = path.join(MEDIA_DIR, key);
+  if (fs.existsSync(filePath)) return filePath;
+  return null;
+}
 
 function getForgeConfig() {
   const forgeUrl = ENV.forgeApiUrl;
@@ -33,39 +47,43 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
   const key = appendHashSuffix(normalizeKey(relKey));
+  const buffer = typeof data === "string" ? Buffer.from(data) : Buffer.from(data as any);
 
-  // 1. Get presigned PUT URL from Forge
-  const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
-  presignUrl.searchParams.set("path", key);
-
-  const presignResp = await fetch(presignUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` },
-  });
-
-  if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
+  // Always save locally first as reliable cache/storage
+  try {
+    saveLocalMedia(key, buffer);
+  } catch (err) {
+    console.warn("[storage] Failed to save local media:", err);
   }
 
-  const { url: s3Url } = (await presignResp.json()) as { url: string };
-  if (!s3Url) throw new Error("Forge returned empty presign URL");
+  // If Forge is configured, also attempt uploading to S3
+  if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+    try {
+      const { forgeUrl, forgeKey } = getForgeConfig();
+      const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
+      presignUrl.searchParams.set("path", key);
 
-  // 2. PUT file directly to S3
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
+      const presignResp = await fetch(presignUrl, {
+        headers: { Authorization: `Bearer ${forgeKey}` },
+      });
 
-  const uploadResp = await fetch(s3Url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: blob,
-  });
-
-  if (!uploadResp.ok) {
-    throw new Error(`Storage upload to S3 failed (${uploadResp.status})`);
+      if (presignResp.ok) {
+        const { url: s3Url } = (await presignResp.json()) as { url: string };
+        if (s3Url) {
+          const blob = new Blob([buffer], { type: contentType });
+          await fetch(s3Url, {
+            method: "PUT",
+            headers: { "Content-Type": contentType },
+            body: blob,
+          });
+        }
+      } else {
+        console.warn("[storage] Forge presign skipped:", presignResp.status);
+      }
+    } catch (err) {
+      console.warn("[storage] Remote upload skipped, using local media:", err);
+    }
   }
 
   return { key, url: `/manus-storage/${key}` };
