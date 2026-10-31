@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gt, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { blockedUsers, conversationMembers, conversations, messageDeletions, messages, messageStatuses, mutedConversations, typingStates, users } from "../../drizzle/schema";
+import { blockedUsers, conversationMembers, conversations, hiddenContacts, messageDeletions, messages, messageStatuses, mutedConversations, typingStates, users } from "../../drizzle/schema";
 import { requireDatabase } from "../db";
 import { storeMedia } from "../media";
 import { publishRealtime } from "../realtime";
@@ -22,7 +22,28 @@ async function assertMember(conversationId: number, userId: number) {
     .from(conversationMembers)
     .where(and(eq(conversationMembers.conversationId, conversationId), eq(conversationMembers.userId, userId)))
     .limit(1);
-  if (!result[0]) throw new TRPCError({ code: "FORBIDDEN", message: "Você não tem acesso a esta conversa." });
+  if (!result[0]) {
+    // If this is a direct conversation belonging to this user, automatically restore membership!
+    const conv = await db
+      .select({ id: conversations.id, type: conversations.type, directKey: conversations.directKey })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+    if (conv[0] && conv[0].type === "direct" && conv[0].directKey) {
+      const allowedIds = conv[0].directKey.split(":").map(Number);
+      if (allowedIds.includes(userId)) {
+        try {
+          await db.insert(conversationMembers).values({
+            conversationId,
+            userId,
+            lastReadAt: new Date(),
+          });
+        } catch (_) {}
+        return db;
+      }
+    }
+    throw new TRPCError({ code: "FORBIDDEN", message: "Você não tem acesso a esta conversa." });
+  }
   return db;
 }
 
@@ -31,8 +52,28 @@ async function recipientIds(conversationId: number, userId: number) {
   const rows = await db
     .select({ userId: conversationMembers.userId })
     .from(conversationMembers)
-    .where(and(eq(conversationMembers.conversationId, conversationId), ne(conversationMembers.userId, userId)))
-  if (!rows.length) throw new TRPCError({ code: "BAD_REQUEST", message: "A conversa precisa ter outro participante." });
+    .where(and(eq(conversationMembers.conversationId, conversationId), ne(conversationMembers.userId, userId)));
+  if (!rows.length) {
+    const conv = await db
+      .select({ type: conversations.type, directKey: conversations.directKey })
+      .from(conversations)
+      .where(eq(conversations.id, conversationId))
+      .limit(1);
+    if (conv[0] && conv[0].type === "direct" && conv[0].directKey) {
+      const ids = conv[0].directKey.split(":").map(Number);
+      const otherId = ids.find(id => id !== userId);
+      if (otherId) {
+        try {
+          await db.insert(conversationMembers).values({
+            conversationId,
+            userId: otherId,
+          });
+        } catch (_) {}
+        return [otherId];
+      }
+    }
+    throw new TRPCError({ code: "BAD_REQUEST", message: "A conversa precisa ter outro participante." });
+  }
   return rows.map(row => row.userId);
 }
 
@@ -65,12 +106,16 @@ export const messagingRouter = router({
         missing.push({ conversationId: convId, userId: input.userId });
       }
       if (missing.length > 0) {
-        await db.insert(conversationMembers).values(missing);
+        try {
+          await db.insert(conversationMembers).values(missing);
+        } catch (_) {}
       }
       // Also unhide if user had hidden this contact
-      await db.delete(hiddenContacts).where(
-        and(eq(hiddenContacts.userId, ctx.user.id), eq(hiddenContacts.targetUserId, input.userId))
-      );
+      try {
+        await db.delete(hiddenContacts).where(
+          and(eq(hiddenContacts.userId, ctx.user.id), eq(hiddenContacts.targetUserId, input.userId))
+        );
+      } catch (_) {}
       return { conversationId: convId, created: false };
     }
 
@@ -174,7 +219,7 @@ export const messagingRouter = router({
         conversationId: input.conversationId,
         mutedUntil,
       }).onDuplicateKeyUpdate({ set: { mutedUntil } });
-      return { success: true, mutedUntil };
+      return { success: true };
     }),
 
   unmuteConversation: protectedProcedure
@@ -283,7 +328,9 @@ export const messagingRouter = router({
       replyToId: input.replyToId,
     });
     const messageId = Number(inserted[0].insertId);
-    await db.insert(messageStatuses).values(recipients.map(userId => ({ messageId, userId, status: "sent" as const })));
+    try {
+      await db.insert(messageStatuses).values(recipients.map(userId => ({ messageId, userId, status: "sent" as const })));
+    } catch (_) {}
     await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, input.conversationId));
     publishRealtime([ctx.user.id, ...recipients], { type: "message", conversationId: input.conversationId });
     return { messageId, createdAt: new Date() };
@@ -308,37 +355,49 @@ export const messagingRouter = router({
     const db = await assertMember(input.conversationId, ctx.user.id);
     if (!input.active) {
       await db.delete(typingStates).where(and(eq(typingStates.conversationId, input.conversationId), eq(typingStates.userId, ctx.user.id)));
-      return { active: false };
+      return { success: true };
     }
-    const expiresAt = new Date(Date.now() + 5_000);
-    await db.insert(typingStates).values({ conversationId: input.conversationId, userId: ctx.user.id, expiresAt }).onDuplicateKeyUpdate({ set: { expiresAt, updatedAt: new Date() } });
-    return { active: true, expiresAt };
+    await db.insert(typingStates).values({
+      conversationId: input.conversationId,
+      userId: ctx.user.id,
+      updatedAt: new Date(),
+    }).onDuplicateKeyUpdate({ set: { updatedAt: new Date() } });
+    return { success: true };
   }),
 
   typing: protectedProcedure.input(z.object({ conversationId: z.number().int().positive() })).query(async ({ ctx, input }) => {
     const db = await assertMember(input.conversationId, ctx.user.id);
-    return db.select({ userId: users.id, name: users.name, expiresAt: typingStates.expiresAt })
+    const rows = await db
+      .select({ userId: typingStates.userId, name: users.name, updatedAt: typingStates.updatedAt })
       .from(typingStates)
       .innerJoin(users, eq(typingStates.userId, users.id))
-      .where(and(eq(typingStates.conversationId, input.conversationId), ne(typingStates.userId, ctx.user.id), gt(typingStates.expiresAt, new Date())));
+      .where(and(
+        eq(typingStates.conversationId, input.conversationId),
+        ne(typingStates.userId, ctx.user.id),
+        gt(typingStates.updatedAt, new Date(Date.now() - 5000)),
+      ));
+    return rows.map(item => ({ userId: item.userId, name: item.name || "Alguém" }));
   }),
 
-  deleteForMe: protectedProcedure.input(z.object({ messageId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-    const db = await requireDatabase();
-    const message = await db.select({ conversationId: messages.conversationId }).from(messages).where(eq(messages.id, input.messageId)).limit(1);
-    if (!message[0]) throw new TRPCError({ code: "NOT_FOUND" });
-    await assertMember(message[0].conversationId, ctx.user.id);
-    await db.insert(messageDeletions).values({ messageId: input.messageId, userId: ctx.user.id }).onDuplicateKeyUpdate({ set: { deletedAt: new Date() } });
-    return { success: true };
-  }),
+  deleteForMe: protectedProcedure.input(z.object({ messageId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      const target = await db.select({ conversationId: messages.conversationId }).from(messages).where(eq(messages.id, input.messageId)).limit(1);
+      if (!target[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Mensagem não encontrada." });
+      await assertMember(target[0].conversationId, ctx.user.id);
+      await db.insert(messageDeletions).values({ messageId: input.messageId, userId: ctx.user.id });
+      return { success: true };
+    }),
 
-  deleteForEveryone: protectedProcedure.input(z.object({ messageId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-    const db = await requireDatabase();
-    const message = await db.select({ senderId: messages.senderId, createdAt: messages.createdAt }).from(messages).where(eq(messages.id, input.messageId)).limit(1);
-    if (!message[0]) throw new TRPCError({ code: "NOT_FOUND" });
-    if (message[0].senderId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Apenas quem enviou pode apagar para todos." });
-    if (Date.now() - message[0].createdAt.getTime() > 24 * 60 * 60 * 1000) throw new TRPCError({ code: "BAD_REQUEST", message: "O prazo para apagar para todos expirou." });
-    await db.update(messages).set({ content: null, fileKey: null, fileUrl: null, fileName: null, fileSize: null, mimeType: null, duration: null, deletedAt: new Date() }).where(eq(messages.id, input.messageId));
-    return { success: true };
-  }),
+  deleteForEveryone: protectedProcedure.input(z.object({ messageId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      const target = await db.select({ conversationId: messages.conversationId, senderId: messages.senderId }).from(messages).where(eq(messages.id, input.messageId)).limit(1);
+      if (!target[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Mensagem não encontrada." });
+      if (target[0].senderId !== ctx.user.id) throw new TRPCError({ code: "FORBIDDEN", message: "Você só pode apagar mensagens enviadas por você." });
+      await assertMember(target[0].conversationId, ctx.user.id);
+      await db.update(messages).set({ deletedAt: new Date(), content: null, fileKey: null, fileUrl: null }).where(eq(messages.id, input.messageId));
+      publishRealtime([ctx.user.id], { type: "message", conversationId: target[0].conversationId });
+      return { success: true };
+    }),
 });

@@ -87,4 +87,28 @@ describe("Contact & Conversation Actions (Delete, Mute, Block)", () => {
     const list = await caller1.messaging.list();
     expect(list.some(c => c.id === chat.conversationId)).toBe(false);
   });
+
+  it("allows user to recreate or send message to a previously deleted conversation without forbidden error", async () => {
+    const caller1 = appRouter.createCaller({
+      user: { id: 1, name: "Murilo Silva", email: "olirumtecapp@gmail.com", role: "admin" } as any,
+      req: {} as any,
+      res: { cookie: () => {} } as any,
+    });
+
+    // Create chat with User 3 (Esposa)
+    const chat = await caller1.messaging.createDirect({ userId: 3 });
+    // Delete conversation from user 1's side
+    await caller1.messaging.deleteConversation({ conversationId: chat.conversationId });
+
+    // User 1 re-opens conversation with User 3 (Esposa)
+    const reChat = await caller1.messaging.createDirect({ userId: 3 });
+    expect(reChat.conversationId).toBe(chat.conversationId);
+
+    // User 1 sends a message to User 3 (Esposa)
+    const sendRes = await caller1.messaging.send({
+      conversationId: reChat.conversationId,
+      content: "Oi amor, tudo bem?",
+    });
+    expect(sendRes.messageId).toBeGreaterThan(0);
+  });
 });

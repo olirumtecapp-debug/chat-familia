@@ -1421,6 +1421,42 @@ export default function Home() {
               </Button>
             </div>
           )}
+          {/* Conversar consigo mesmo (Anotações / Mensagem para mim mesmo) */}
+          <div
+            className="conversation-row hover:bg-[var(--surface-soft)] transition-colors w-full flex items-center justify-between gap-2 p-3 text-left border-b border-[var(--line)]/60 bg-[var(--surface-soft)]/40 cursor-pointer"
+            onClick={() => user && createDirect.mutate({ userId: user.id })}
+          >
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="relative shrink-0">
+                <Avatar name={`${profile.data?.name || user?.name || "Você"} (Você)`} url={profile.data?.avatarUrl} />
+                <span className="presence-dot absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[var(--surface)] bg-emerald-500" />
+              </div>
+              <span className="conversation-copy flex-1 min-w-0">
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <strong className="truncate font-semibold text-sm text-[var(--ink)]">{profile.data?.name || user?.name || "Você"}</strong>
+                  <span className="text-[10px] font-bold text-[#0080EA] bg-[#0080EA]/15 px-1.5 py-0.5 rounded-md shrink-0">
+                    Você (Anotações)
+                  </span>
+                </span>
+                <small className="text-xs text-[var(--muted)] truncate block">
+                  Envie mensagens, links e notas para você mesmo
+                </small>
+              </span>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="text-[#0080EA] border-[#0080EA]/30 hover:bg-[#0080EA]/10 text-xs px-2.5 py-1 h-7 rounded-lg font-medium shadow-none shrink-0"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (user) createDirect.mutate({ userId: user.id });
+              }}
+              disabled={createDirect.isPending}
+            >
+              Anotações
+            </Button>
+          </div>
+
           {allContacts.data?.map(contact => (
             <div
               key={contact.id}

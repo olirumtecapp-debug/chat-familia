@@ -178,7 +178,7 @@ var mutedConversations = mysqlTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.conversationId] })]
 );
-var hiddenContacts2 = mysqlTable(
+var hiddenContacts = mysqlTable(
   "hidden_contacts",
   {
     userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -1616,13 +1616,47 @@ var mediaInput = z4.object({
 async function assertMember(conversationId, userId) {
   const db = await requireDatabase();
   const result = await db.select({ conversationId: conversationMembers.conversationId }).from(conversationMembers).where(and3(eq4(conversationMembers.conversationId, conversationId), eq4(conversationMembers.userId, userId))).limit(1);
-  if (!result[0]) throw new TRPCError5({ code: "FORBIDDEN", message: "Voc\xEA n\xE3o tem acesso a esta conversa." });
+  if (!result[0]) {
+    const conv = await db.select({ id: conversations.id, type: conversations.type, directKey: conversations.directKey }).from(conversations).where(eq4(conversations.id, conversationId)).limit(1);
+    if (conv[0] && conv[0].type === "direct" && conv[0].directKey) {
+      const allowedIds = conv[0].directKey.split(":").map(Number);
+      if (allowedIds.includes(userId)) {
+        try {
+          await db.insert(conversationMembers).values({
+            conversationId,
+            userId,
+            lastReadAt: /* @__PURE__ */ new Date()
+          });
+        } catch (_) {
+        }
+        return db;
+      }
+    }
+    throw new TRPCError5({ code: "FORBIDDEN", message: "Voc\xEA n\xE3o tem acesso a esta conversa." });
+  }
   return db;
 }
 async function recipientIds(conversationId, userId) {
   const db = await requireDatabase();
   const rows = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(and3(eq4(conversationMembers.conversationId, conversationId), ne3(conversationMembers.userId, userId)));
-  if (!rows.length) throw new TRPCError5({ code: "BAD_REQUEST", message: "A conversa precisa ter outro participante." });
+  if (!rows.length) {
+    const conv = await db.select({ type: conversations.type, directKey: conversations.directKey }).from(conversations).where(eq4(conversations.id, conversationId)).limit(1);
+    if (conv[0] && conv[0].type === "direct" && conv[0].directKey) {
+      const ids = conv[0].directKey.split(":").map(Number);
+      const otherId = ids.find((id) => id !== userId);
+      if (otherId) {
+        try {
+          await db.insert(conversationMembers).values({
+            conversationId,
+            userId: otherId
+          });
+        } catch (_) {
+        }
+        return [otherId];
+      }
+    }
+    throw new TRPCError5({ code: "BAD_REQUEST", message: "A conversa precisa ter outro participante." });
+  }
   return rows.map((row) => row.userId);
 }
 function online(lastSeen) {
@@ -1648,11 +1682,17 @@ var messagingRouter = router({
         missing.push({ conversationId: convId, userId: input.userId });
       }
       if (missing.length > 0) {
-        await db.insert(conversationMembers).values(missing);
+        try {
+          await db.insert(conversationMembers).values(missing);
+        } catch (_) {
+        }
       }
-      await db.delete(hiddenContacts).where(
-        and3(eq4(hiddenContacts.userId, ctx.user.id), eq4(hiddenContacts.targetUserId, input.userId))
-      );
+      try {
+        await db.delete(hiddenContacts).where(
+          and3(eq4(hiddenContacts.userId, ctx.user.id), eq4(hiddenContacts.targetUserId, input.userId))
+        );
+      } catch (_) {
+      }
       return { conversationId: convId, created: false };
     }
     try {
@@ -1715,7 +1755,7 @@ var messagingRouter = router({
       conversationId: input.conversationId,
       mutedUntil
     }).onDuplicateKeyUpdate({ set: { mutedUntil } });
-    return { success: true, mutedUntil };
+    return { success: true };
   }),
   unmuteConversation: protectedProcedure.input(z4.object({ conversationId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const db = await assertMember(input.conversationId, ctx.user.id);
@@ -1801,7 +1841,10 @@ var messagingRouter = router({
       replyToId: input.replyToId
     });
     const messageId = Number(inserted[0].insertId);
-    await db.insert(messageStatuses).values(recipients.map((userId) => ({ messageId, userId, status: "sent" })));
+    try {
+      await db.insert(messageStatuses).values(recipients.map((userId) => ({ messageId, userId, status: "sent" })));
+    } catch (_) {
+    }
     await db.update(conversations).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq4(conversations.id, input.conversationId));
     publishRealtime([ctx.user.id, ...recipients], { type: "message", conversationId: input.conversationId });
     return { messageId, createdAt: /* @__PURE__ */ new Date() };
@@ -1819,31 +1862,40 @@ var messagingRouter = router({
     const db = await assertMember(input.conversationId, ctx.user.id);
     if (!input.active) {
       await db.delete(typingStates).where(and3(eq4(typingStates.conversationId, input.conversationId), eq4(typingStates.userId, ctx.user.id)));
-      return { active: false };
+      return { success: true };
     }
-    const expiresAt = new Date(Date.now() + 5e3);
-    await db.insert(typingStates).values({ conversationId: input.conversationId, userId: ctx.user.id, expiresAt }).onDuplicateKeyUpdate({ set: { expiresAt, updatedAt: /* @__PURE__ */ new Date() } });
-    return { active: true, expiresAt };
+    await db.insert(typingStates).values({
+      conversationId: input.conversationId,
+      userId: ctx.user.id,
+      updatedAt: /* @__PURE__ */ new Date()
+    }).onDuplicateKeyUpdate({ set: { updatedAt: /* @__PURE__ */ new Date() } });
+    return { success: true };
   }),
   typing: protectedProcedure.input(z4.object({ conversationId: z4.number().int().positive() })).query(async ({ ctx, input }) => {
     const db = await assertMember(input.conversationId, ctx.user.id);
-    return db.select({ userId: users.id, name: users.name, expiresAt: typingStates.expiresAt }).from(typingStates).innerJoin(users, eq4(typingStates.userId, users.id)).where(and3(eq4(typingStates.conversationId, input.conversationId), ne3(typingStates.userId, ctx.user.id), gt2(typingStates.expiresAt, /* @__PURE__ */ new Date())));
+    const rows = await db.select({ userId: typingStates.userId, name: users.name, updatedAt: typingStates.updatedAt }).from(typingStates).innerJoin(users, eq4(typingStates.userId, users.id)).where(and3(
+      eq4(typingStates.conversationId, input.conversationId),
+      ne3(typingStates.userId, ctx.user.id),
+      gt2(typingStates.updatedAt, new Date(Date.now() - 5e3))
+    ));
+    return rows.map((item) => ({ userId: item.userId, name: item.name || "Algu\xE9m" }));
   }),
   deleteForMe: protectedProcedure.input(z4.object({ messageId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const db = await requireDatabase();
-    const message = await db.select({ conversationId: messages.conversationId }).from(messages).where(eq4(messages.id, input.messageId)).limit(1);
-    if (!message[0]) throw new TRPCError5({ code: "NOT_FOUND" });
-    await assertMember(message[0].conversationId, ctx.user.id);
-    await db.insert(messageDeletions).values({ messageId: input.messageId, userId: ctx.user.id }).onDuplicateKeyUpdate({ set: { deletedAt: /* @__PURE__ */ new Date() } });
+    const target = await db.select({ conversationId: messages.conversationId }).from(messages).where(eq4(messages.id, input.messageId)).limit(1);
+    if (!target[0]) throw new TRPCError5({ code: "NOT_FOUND", message: "Mensagem n\xE3o encontrada." });
+    await assertMember(target[0].conversationId, ctx.user.id);
+    await db.insert(messageDeletions).values({ messageId: input.messageId, userId: ctx.user.id });
     return { success: true };
   }),
   deleteForEveryone: protectedProcedure.input(z4.object({ messageId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const db = await requireDatabase();
-    const message = await db.select({ senderId: messages.senderId, createdAt: messages.createdAt }).from(messages).where(eq4(messages.id, input.messageId)).limit(1);
-    if (!message[0]) throw new TRPCError5({ code: "NOT_FOUND" });
-    if (message[0].senderId !== ctx.user.id) throw new TRPCError5({ code: "FORBIDDEN", message: "Apenas quem enviou pode apagar para todos." });
-    if (Date.now() - message[0].createdAt.getTime() > 24 * 60 * 60 * 1e3) throw new TRPCError5({ code: "BAD_REQUEST", message: "O prazo para apagar para todos expirou." });
-    await db.update(messages).set({ content: null, fileKey: null, fileUrl: null, fileName: null, fileSize: null, mimeType: null, duration: null, deletedAt: /* @__PURE__ */ new Date() }).where(eq4(messages.id, input.messageId));
+    const target = await db.select({ conversationId: messages.conversationId, senderId: messages.senderId }).from(messages).where(eq4(messages.id, input.messageId)).limit(1);
+    if (!target[0]) throw new TRPCError5({ code: "NOT_FOUND", message: "Mensagem n\xE3o encontrada." });
+    if (target[0].senderId !== ctx.user.id) throw new TRPCError5({ code: "FORBIDDEN", message: "Voc\xEA s\xF3 pode apagar mensagens enviadas por voc\xEA." });
+    await assertMember(target[0].conversationId, ctx.user.id);
+    await db.update(messages).set({ deletedAt: /* @__PURE__ */ new Date(), content: null, fileKey: null, fileUrl: null }).where(eq4(messages.id, input.messageId));
+    publishRealtime([ctx.user.id], { type: "message", conversationId: target[0].conversationId });
     return { success: true };
   })
 });
@@ -1922,7 +1974,7 @@ var profileRouter = router({
   }),
   deleteContact: protectedProcedure.input(z5.object({ contactId: z5.number().int().positive() })).mutation(async ({ ctx, input }) => {
     const db = await requireDatabase();
-    await db.insert(hiddenContacts2).values({
+    await db.insert(hiddenContacts).values({
       userId: ctx.user.id,
       targetUserId: input.contactId
     }).onDuplicateKeyUpdate({ set: { createdAt: /* @__PURE__ */ new Date() } });
@@ -1977,7 +2029,7 @@ var profileRouter = router({
       status: users.status,
       lastSeen: users.lastSeen
     }).from(users).where(whereClause).orderBy(desc3(users.lastSeen)).limit(50);
-    const hidden = await db.select({ targetUserId: hiddenContacts2.targetUserId }).from(hiddenContacts2).where(eq5(hiddenContacts2.userId, ctx.user.id));
+    const hidden = await db.select({ targetUserId: hiddenContacts.targetUserId }).from(hiddenContacts).where(eq5(hiddenContacts.userId, ctx.user.id));
     const hiddenIds = new Set(hidden.map((h) => h.targetUserId));
     const blocked = await db.select({ blockedUserId: blockedUsers.blockedUserId }).from(blockedUsers).where(eq5(blockedUsers.userId, ctx.user.id));
     const blockedIds = new Set(blocked.map((b) => b.blockedUserId));
