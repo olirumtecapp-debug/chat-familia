@@ -103,33 +103,15 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     nickname = nickname.toLowerCase();
   }
 
-  // Canonical mapping for family accounts to guarantee single source of truth
-  let canonicalOpenId: string | null = null;
-  let canonicalId: number | null = null;
-  if (email === "olirumtecapp@gmail.com" || nickname === "@olirumpai") {
-    canonicalOpenId = "murilo_silva_pai";
-    canonicalId = 1;
-    nickname = "@olirumpai";
-  } else if (email === "esposa@gmail.com" || nickname === "@esposasilva") {
-    canonicalOpenId = "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a";
-    canonicalId = 3;
-    nickname = "@esposasilva";
-  } else if (email === "filho@gmail.com" || nickname === "@olirumfilho") {
-    canonicalOpenId = "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b";
-    canonicalId = 4;
-    nickname = "@olirumfilho";
-  }
-
   const now = new Date();
   const db = await getDb();
 
   try {
-    // 1. Try to find by canonical openId
     let existing: any = null;
-    if (canonicalOpenId) {
-      existing = await getUserByOpenId(canonicalOpenId);
+    if (nickname) {
+      const res = await db.select().from(users).where(eq(users.nickname as any, nickname)).limit(1);
+      existing = res[0];
     }
-    // 2. Try to find by email
     if (!existing) {
       existing = await getUserByEmail(email);
     }
@@ -147,9 +129,8 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
       return refreshed || existing;
     }
 
-    const openId = canonicalOpenId || `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    const openId = `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
     await db.insert(users).values({
-      ...(canonicalId ? { id: canonicalId } : {}),
       openId,
       name,
       nickname: nickname || null,
@@ -177,8 +158,8 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     const mock = getMockDb();
 
     let existing: any = null;
-    if (canonicalOpenId) {
-      const res = await mock.select().from(users).where(eq(users.openId, canonicalOpenId)).limit(1);
+    if (nickname) {
+      const res = await mock.select().from(users).where(eq(users.nickname as any, nickname)).limit(1);
       existing = res[0];
     }
     if (!existing) {
@@ -197,9 +178,8 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
       return { ...existing, name, email, ...(nickname ? { nickname } : {}), lastSignedIn: now, lastSeen: now };
     }
 
-    const openId = canonicalOpenId || `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    const openId = `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
     await (mock.insert(users).values({
-      ...(canonicalId ? { id: canonicalId } : {}),
       openId,
       name,
       nickname: nickname || null,

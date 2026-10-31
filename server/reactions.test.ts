@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll } from "vitest";
+import { seedTestUsers } from "./mockDb";
 import { appRouter } from "./routers";
 import { getEmojiDisplayStyle } from "../client/src/lib/emojiUtils";
 
@@ -37,6 +38,9 @@ describe("Emoji Display Style (Jumbo & Animations)", () => {
 });
 
 describe("Message Reactions TRPC endpoints", () => {
+  beforeAll(() => {
+    seedTestUsers();
+  });
   it("allows reacting to a message, toggling off, and switching emoji", async () => {
     const userA = { id: 1, openId: "user_a", name: "User A", role: "user" as const, email: "a@test.com" };
     const userB = { id: 3, openId: "user_b", name: "User B", role: "user" as const, email: "b@test.com" };

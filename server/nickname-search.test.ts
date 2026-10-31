@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll } from "vitest";
+import { seedTestUsers } from "./mockDb";
 import { appRouter } from "./routers";
 
 describe("Nickname and Search Universal Resolution", () => {
+  beforeAll(() => {
+    seedTestUsers();
+  });
   it("checkNickname returns available=true for an unused nickname", async () => {
     const caller = appRouter.createCaller({
       user: null as any,

@@ -141,8 +141,8 @@ export const profileRouter = router({
       let whereClause: any = ne(users.id, ctx.user.id);
       if (rawQuery.length > 0) {
         const cleanTerm = rawQuery.replace(/^@/, "");
-        const term = `%${cleanTerm.replace(/[%_\\]/g, "\\$&")}%`;
-        const rawTerm = `%${rawQuery.replace(/[%_\\]/g, "\\$&")}%`;
+        const term = `%${cleanTerm}%`;
+        const rawTerm = `%${rawQuery}%`;
         whereClause = and(
           ne(users.id, ctx.user.id),
           or(

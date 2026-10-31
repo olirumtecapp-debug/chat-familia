@@ -39,7 +39,7 @@ app.get("/api/calls/ice", async (req: any, res: any) => {
   }
 });
 
-app.get("/api/realtime/stream", async (req: any, res: any) => {
+app.get(["/api/realtime", "/api/realtime/stream"], async (req: any, res: any) => {
   try {
     const user = await sdk.authenticateRequest(req);
     res.setHeader("Content-Type", "text/event-stream");

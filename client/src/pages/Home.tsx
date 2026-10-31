@@ -1376,7 +1376,7 @@ export default function Home() {
     }
   };
   const selected = conversations.data?.find(conversation => conversation.id === selectedId) || null;
-  const conversationReady = Boolean(selectedId && selected);
+  const conversationReady = Boolean(selectedId && selectedId > 0);
   const history = trpc.messaging.history.useQuery({ conversationId: selectedId || 0 }, { enabled: conversationReady, refetchInterval: 2_000 });
   const typing = trpc.messaging.typing.useQuery({ conversationId: selectedId || 0 }, { enabled: conversationReady, refetchInterval: 1_500 });
   const acknowledge = trpc.messaging.acknowledge.useMutation(); const deleteMe = trpc.messaging.deleteForMe.useMutation(); const deleteAll = trpc.messaging.deleteForEveryone.useMutation(); const react = trpc.messaging.react.useMutation({ onSuccess: () => utils.messaging.history.invalidate() });

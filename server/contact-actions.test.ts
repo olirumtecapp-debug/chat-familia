@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
-import { resetChatStore } from "./mockDb";
+import { seedTestUsers } from "./mockDb";
 
 describe("Contact & Conversation Actions (Delete, Mute, Block)", () => {
   beforeEach(() => {
-    resetChatStore();
+    seedTestUsers();
   });
   it("allows user to mute and unmute a conversation", async () => {
     // User 1 (Murilo) and User 4 (Filho)

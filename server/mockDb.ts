@@ -120,117 +120,10 @@ const DATA_DIR = IS_VERCEL ? "/tmp" : path.resolve(process.cwd(), "server", "dat
 const STORE_FILE = path.join(DATA_DIR, "chat-store.json");
 
 function getInitialStore(): ChatStore {
-  const now = new Date();
   return {
-    users: [
-      {
-        id: 1,
-        openId: "murilo_silva_pai",
-        name: "Murilo Silva",
-        email: "olirumtecapp@gmail.com",
-        nickname: "@olirumpai",
-        avatarKey: null,
-        avatarUrl: null,
-        status: "Disponível 🚀",
-        lastSeen: now,
-        loginMethod: "commercial-auth",
-        role: "admin",
-        createdAt: now,
-        updatedAt: now,
-        lastSignedIn: now,
-      },
-      {
-        id: 3,
-        openId: "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a",
-        name: "Esposa Silva",
-        email: "esposa@gmail.com",
-        nickname: "@esposasilva",
-        avatarKey: null,
-        avatarUrl: null,
-        status: "Disponível ❤️",
-        lastSeen: now,
-        loginMethod: "commercial-auth",
-        role: "user",
-        createdAt: now,
-        updatedAt: now,
-        lastSignedIn: now,
-      },
-      {
-        id: 4,
-        openId: "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b",
-        name: "Filho Silva",
-        email: "filho@gmail.com",
-        nickname: "@olirumfilho",
-        avatarKey: null,
-        avatarUrl: null,
-        status: "Disponível 🎮",
-        lastSeen: now,
-        loginMethod: "commercial-auth",
-        role: "user",
-        createdAt: now,
-        updatedAt: now,
-        lastSignedIn: now,
-      },
-    ],
-    conversations: [
-      {
-        id: 1,
-        type: "direct",
-        directKey: "1:4",
-        title: null,
-        groupOwnerId: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 2,
-        type: "direct",
-        directKey: "1:3",
-        title: null,
-        groupOwnerId: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 3,
-        type: "direct",
-        directKey: "3:4",
-        title: null,
-        groupOwnerId: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 4,
-        type: "direct",
-        directKey: "1:1",
-        title: "Anotações Pessoais (Você)",
-        groupOwnerId: null,
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 5,
-        type: "group",
-        directKey: null,
-        title: "Família Silva ❤️",
-        groupOwnerId: 1,
-        createdAt: now,
-        updatedAt: now,
-      },
-    ],
-    conversationMembers: [
-      { conversationId: 1, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
-      { conversationId: 1, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now },
-      { conversationId: 2, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
-      { conversationId: 2, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
-      { conversationId: 3, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
-      { conversationId: 3, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now },
-      { conversationId: 4, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
-      { conversationId: 5, userId: 1, memberRole: "admin", joinedAt: now, lastReadAt: now },
-      { conversationId: 5, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
-      { conversationId: 5, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now },
-    ],
+    users: [],
+    conversations: [],
+    conversationMembers: [],
     messages: [],
     messageStatuses: [],
     messageDeletions: [],
@@ -267,40 +160,22 @@ function loadStore(): ChatStore {
       const parsed = JSON.parse(raw);
       const data = reviveDates(parsed);
 
-      if (data && Array.isArray(data.users)) {
-        // Deduplicate users by normalized email or nickname
-        const userMap = new Map<string, any>();
-        for (const u of data.users) {
-          const key = (u.nickname || u.email || String(u.id)).toLowerCase();
-          if (!userMap.has(key)) {
-            userMap.set(key, u);
-          }
-        }
-
-        // Guarantee canonical family users exist
-        const initial = getInitialStore();
-        for (const u of initial.users) {
-          const key = (u.nickname || u.email || String(u.id)).toLowerCase();
-          if (!userMap.has(key)) {
-            userMap.set(key, u);
-          }
-        }
-        data.users = Array.from(userMap.values());
-      } else {
-        data.users = getInitialStore().users;
+      if (data) {
+        data.users = Array.isArray(data.users) ? data.users : [];
+        data.conversations = Array.isArray(data.conversations) ? data.conversations : [];
+        data.conversationMembers = Array.isArray(data.conversationMembers) ? data.conversationMembers : [];
+        data.messages = Array.isArray(data.messages) ? data.messages : [];
+        data.messageStatuses = Array.isArray(data.messageStatuses) ? data.messageStatuses : [];
+        data.messageDeletions = Array.isArray(data.messageDeletions) ? data.messageDeletions : [];
+        data.calls = Array.isArray(data.calls) ? data.calls : [];
+        data.callSignals = Array.isArray(data.callSignals) ? data.callSignals : [];
+        data.typingStates = Array.isArray(data.typingStates) ? data.typingStates : [];
+        data.blockedUsers = Array.isArray(data.blockedUsers) ? data.blockedUsers : [];
+        data.mutedConversations = Array.isArray(data.mutedConversations) ? data.mutedConversations : [];
+        data.hiddenContacts = Array.isArray(data.hiddenContacts) ? data.hiddenContacts : [];
+        data.messageReactions = Array.isArray(data.messageReactions) ? data.messageReactions : [];
+        return data;
       }
-
-      // Guarantee default conversations exist
-      if (!Array.isArray(data.conversations) || data.conversations.length === 0) {
-        data.conversations = getInitialStore().conversations;
-        data.conversationMembers = getInitialStore().conversationMembers;
-      }
-
-      data.blockedUsers = data.blockedUsers || [];
-      data.mutedConversations = data.mutedConversations || [];
-      data.hiddenContacts = data.hiddenContacts || [];
-      data.messageReactions = data.messageReactions || [];
-      return data;
     }
   } catch (e) {
     console.warn("[mockDb] Failed to load store, using fresh initial store", e);
@@ -342,6 +217,61 @@ export function resetChatStore() {
   store = getInitialStore();
   persistStore();
   return store;
+}
+
+export function seedTestUsers() {
+  const now = new Date();
+  store.users = [
+    {
+      id: 1,
+      openId: "murilo_silva_pai",
+      name: "Murilo Silva",
+      email: "olirumtecapp@gmail.com",
+      nickname: "@olirumpai",
+      avatarKey: null,
+      avatarUrl: null,
+      status: "Disponível",
+      lastSeen: now,
+      loginMethod: "commercial-auth",
+      role: "admin",
+      createdAt: now,
+      updatedAt: now,
+      lastSignedIn: now,
+    },
+    {
+      id: 3,
+      openId: "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a",
+      name: "Esposa Silva",
+      email: "esposa@gmail.com",
+      nickname: "@esposasilva",
+      avatarKey: null,
+      avatarUrl: null,
+      status: "Disponível",
+      lastSeen: now,
+      loginMethod: "commercial-auth",
+      role: "user",
+      createdAt: now,
+      updatedAt: now,
+      lastSignedIn: now,
+    },
+    {
+      id: 4,
+      openId: "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b",
+      name: "Filho Silva",
+      email: "filho@gmail.com",
+      nickname: "@olirumfilho",
+      avatarKey: null,
+      avatarUrl: null,
+      status: "Disponível",
+      lastSeen: now,
+      loginMethod: "commercial-auth",
+      role: "user",
+      createdAt: now,
+      updatedAt: now,
+      lastSignedIn: now,
+    },
+  ];
+  persistStore();
 }
 
 export function getRawStore(): ChatStore {
