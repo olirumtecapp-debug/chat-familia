@@ -1089,3 +1089,157 @@ button.send-btn:disabled {
   cursor: not-allowed !important;
   box-shadow: none !important;
 }
+
+/* Floating Reaction Bar */
+.floating-reaction-bar {
+  position: absolute;
+  top: -46px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 9999px;
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.15), 0 2px 6px -1px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(8px);
+  animation: reactionPopIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  user-select: none;
+}
+
+.dark .floating-reaction-bar {
+  background: rgba(30, 41, 59, 0.95);
+  border-color: rgba(51, 65, 85, 0.8);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.45), 0 2px 6px -1px rgba(0, 0, 0, 0.25);
+}
+
+@keyframes reactionPopIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.reaction-emoji-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 20px;
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+  padding: 0;
+}
+
+.reaction-emoji-btn:hover {
+  transform: scale(1.3);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.dark .reaction-emoji-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.reaction-emoji-btn:active {
+  transform: scale(0.95);
+}
+
+.reaction-plus-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: rgba(0, 0, 0, 0.05);
+  border: none;
+  border-radius: 50%;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 2px;
+}
+
+.dark .reaction-plus-btn {
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+}
+
+.reaction-plus-btn:hover {
+  background: #0080EA;
+  color: #ffffff;
+  transform: scale(1.1);
+}
+
+/* Message Reaction Badges below Bubble */
+.message-reactions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+.message-reactions-row.own {
+  justify-content: flex-end;
+}
+
+.reaction-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e2e8f0;
+  border-radius: 9999px;
+  font-size: 11px;
+  color: #334155;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.dark .reaction-pill {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: #334155;
+  color: #cbd5e1;
+}
+
+.reaction-pill:hover {
+  transform: scale(1.05);
+  border-color: #0080EA;
+}
+
+.reaction-pill.active {
+  background: rgba(0, 128, 234, 0.1);
+  border-color: #0080EA;
+  color: #0080EA;
+  font-weight: 600;
+}
+
+.dark .reaction-pill.active {
+  background: rgba(0, 128, 234, 0.2);
+  border-color: #0080EA;
+  color: #38bdf8;
+}
+
+.reaction-pill .reaction-emoji {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.reaction-pill .reaction-count {
+  font-size: 11px;
+  font-weight: 600;
+}
+

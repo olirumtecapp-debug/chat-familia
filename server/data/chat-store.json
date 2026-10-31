@@ -1,46 +1,5 @@
 {
-  "users": [
-    {
-      "id": 1,
-      "openId": "murilo_silva_pai",
-      "name": "Murilo Silva",
-      "email": "olirumtecapp@gmail.com",
-      "nickname": "@olirumpai",
-      "avatarKey": null,
-      "avatarUrl": null,
-      "status": "Disponível 🚀",
-      "lastSeen": "2026-10-30T23:56:00.789Z",
-      "loginMethod": "commercial-auth",
-      "role": "admin",
-      "createdAt": "2026-10-30T15:31:41.931Z",
-      "updatedAt": "2026-10-30T23:56:00.789Z",
-      "lastSignedIn": "2026-10-30T23:56:00.789Z"
-    },
-    {
-      "id": 3,
-      "createdAt": "2026-10-30T15:34:35.445Z",
-      "updatedAt": "2026-10-30T23:56:00.891Z",
-      "openId": "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a",
-      "name": "Esposa Silva",
-      "email": "esposa@gmail.com",
-      "loginMethod": "commercial-auth",
-      "lastSignedIn": "2026-10-30T23:56:00.890Z",
-      "lastSeen": "2026-10-30T23:56:00.891Z",
-      "nickname": "@esposasilva"
-    },
-    {
-      "id": 4,
-      "createdAt": "2026-10-30T15:34:35.458Z",
-      "updatedAt": "2026-10-30T23:56:00.899Z",
-      "openId": "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b",
-      "name": "Filho Silva",
-      "email": "filho@gmail.com",
-      "loginMethod": "commercial-auth",
-      "lastSignedIn": "2026-10-30T23:56:00.898Z",
-      "lastSeen": "2026-10-30T23:56:00.898Z",
-      "nickname": "@olirumfilho"
-    }
-  ],
+  "users": [],
   "conversations": [],
   "conversationMembers": [],
   "messages": [],
@@ -51,5 +10,6 @@
   "typingStates": [],
   "blockedUsers": [],
   "mutedConversations": [],
-  "hiddenContacts": []
+  "hiddenContacts": [],
+  "messageReactions": []
 }

@@ -213,5 +213,25 @@ export const hiddenContacts = mysqlTable(
   table => [primaryKey({ columns: [table.userId, table.targetUserId] })],
 );
 
+export const messageReactions = mysqlTable(
+  "message_reactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    messageId: int("messageId")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    userId: int("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    emoji: varchar("emoji", { length: 32 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [
+    uniqueIndex("message_user_reaction_idx").on(table.messageId, table.userId),
+    index("reaction_msg_idx").on(table.messageId),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+export type MessageReaction = typeof messageReactions.$inferSelect;

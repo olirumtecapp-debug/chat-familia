@@ -106,6 +106,13 @@ export interface ChatStore {
     targetUserId: number;
     createdAt: Date;
   }>;
+  messageReactions: Array<{
+    id: number;
+    messageId: number;
+    userId: number;
+    emoji: string;
+    createdAt: Date;
+  }>;
 }
 
 const IS_VERCEL = !!process.env.VERCEL;
@@ -113,58 +120,8 @@ const DATA_DIR = IS_VERCEL ? "/tmp" : path.resolve(process.cwd(), "server", "dat
 const STORE_FILE = path.join(DATA_DIR, "chat-store.json");
 
 function getInitialStore(): ChatStore {
-  const now = new Date();
   return {
-    users: [
-      {
-        id: 1,
-        openId: "murilo_silva_pai",
-        name: "Murilo Silva",
-        email: "olirumtecapp@gmail.com",
-        nickname: "@olirumpai",
-        avatarKey: null,
-        avatarUrl: null,
-        status: "Disponível 🚀",
-        lastSeen: now,
-        loginMethod: "commercial-auth",
-        role: "admin",
-        createdAt: now,
-        updatedAt: now,
-        lastSignedIn: now,
-      },
-      {
-        id: 3,
-        openId: "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a",
-        name: "Esposa Silva",
-        email: "esposa@gmail.com",
-        nickname: "@esposasilva",
-        avatarKey: null,
-        avatarUrl: null,
-        status: "Disponível ❤️",
-        lastSeen: now,
-        loginMethod: "commercial-auth",
-        role: "user",
-        createdAt: now,
-        updatedAt: now,
-        lastSignedIn: now,
-      },
-      {
-        id: 4,
-        openId: "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b",
-        name: "Filho Silva",
-        email: "filho@gmail.com",
-        nickname: "@olirumfilho",
-        avatarKey: null,
-        avatarUrl: null,
-        status: "Disponível 🎮",
-        lastSeen: now,
-        loginMethod: "commercial-auth",
-        role: "user",
-        createdAt: now,
-        updatedAt: now,
-        lastSignedIn: now,
-      },
-    ],
+    users: [],
     conversations: [],
     conversationMembers: [],
     messages: [],
@@ -176,6 +133,7 @@ function getInitialStore(): ChatStore {
     blockedUsers: [],
     mutedConversations: [],
     hiddenContacts: [],
+    messageReactions: [],
   };
 }
 
@@ -199,6 +157,7 @@ function loadStore(): ChatStore {
       data.blockedUsers = data.blockedUsers || [];
       data.mutedConversations = data.mutedConversations || [];
       data.hiddenContacts = data.hiddenContacts || [];
+      data.messageReactions = data.messageReactions || [];
       return data;
     }
   } catch (e) {
@@ -263,6 +222,7 @@ function getTableName(table: any): keyof ChatStore {
   if (name === "blocked_users" || name === "blockedUsers") return "blockedUsers";
   if (name === "muted_conversations" || name === "mutedConversations") return "mutedConversations";
   if (name === "hidden_contacts" || name === "hiddenContacts") return "hiddenContacts";
+  if (name === "message_reactions" || name === "messageReactions") return "messageReactions";
   return "users";
 }
 
@@ -401,7 +361,11 @@ export function getMockDb() {
           return queryBuilder;
         },
         innerJoin: (joinTable: any, onCond: any) => {
-          joins.push({ table: joinTable, on: onCond });
+          joins.push({ table: joinTable, on: onCond, isLeft: false });
+          return queryBuilder;
+        },
+        leftJoin: (joinTable: any, onCond: any) => {
+          joins.push({ table: joinTable, on: onCond, isLeft: true });
           return queryBuilder;
         },
         where: (cond: any) => {
@@ -421,7 +385,7 @@ export function getMockDb() {
             const tableName = getTableName(currentTable);
             let list = [...((store[tableName] as any[]) || [])];
 
-            // Handle inner joins if present
+            // Handle inner and left joins if present
             if (joins.length > 0) {
               const joinedList: any[] = [];
               for (const row of list) {
@@ -434,17 +398,25 @@ export function getMockDb() {
                   // Find matching joined row
                   const match = jTableRows.find(jRow => {
                     if (jCond && jCond.colName) {
-                      // ColName in join usually matches id or userId
-                      return jRow.id === row[jCond.colName] || jRow[jCond.colName] === row.id || jRow.id === row.userId || jRow.userId === row.id;
+                      // ColName in join usually matches id, userId, or messageId
+                      return (
+                        jRow.id === row[jCond.colName] ||
+                        jRow[jCond.colName] === row.id ||
+                        jRow.id === row.userId ||
+                        jRow.userId === row.id ||
+                        jRow.messageId === row.id
+                      );
                     }
                     return true;
                   });
                   if (!match) {
-                    matchAll = false;
-                    break;
+                    if (!j.isLeft) {
+                      matchAll = false;
+                      break;
+                    }
+                  } else {
+                    Object.assign(merged, match);
                   }
-                  // Prefix or merge
-                  Object.assign(merged, match);
                 }
                 if (matchAll) joinedList.push(merged);
               }

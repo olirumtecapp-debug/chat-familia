@@ -131,11 +131,11 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     const mock = getMockDb();
     const existing = await mock.select().from(users).where(eq(users.email, email)).limit(1);
     if (existing[0]) {
-      await mock.update(users).set({ name, ...(input.nickname ? { nickname: input.nickname } : {}), lastSignedIn: new Date() }).where(eq(users.id, existing[0].id));
+      await (mock.update(users).set({ name, ...(input.nickname ? { nickname: input.nickname } : {}), lastSignedIn: new Date() }).where(eq(users.id, existing[0].id)) as any);
       return { ...existing[0], name, ...(input.nickname ? { nickname: input.nickname } : {}) };
     }
     const openId = `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
-    await mock.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: new Date(), lastSeen: new Date() });
+    await (mock.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: new Date(), lastSeen: new Date() }) as any);
     const user = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
     return user[0];
   }

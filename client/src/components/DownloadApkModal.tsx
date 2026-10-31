@@ -56,7 +56,7 @@ export function DownloadApkModal({ open, onOpenChange }: DownloadApkModalProps) 
           </a>
 
           <div className="flex items-center justify-between px-2 pt-1 text-[11px] text-slate-400">
-            <span>Versão 1.0.4 Oficial</span>
+            <span>Versão 1.0.5 Oficial</span>
             <span className="flex items-center gap-1 text-[#0080EA] dark:text-[#38BDF8] font-semibold">
               <CheckCircle2 className="w-3.5 h-3.5" /> Verificado e Seguro
             </span>

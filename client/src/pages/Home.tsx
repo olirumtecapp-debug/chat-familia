@@ -873,36 +873,222 @@ function AudioPlayer({ src, duration }: { src?: string | null; duration?: number
   return <div className="audio-player"><button onClick={() => { if (audio.current?.paused) audio.current.play(); else audio.current?.pause(); }}><Mic className={playing ? "recording-icon" : ""} /></button><div className="audio-track"><input type="range" min="0" max="100" value={progress} onChange={event => { if (audio.current?.duration) audio.current.currentTime = (Number(event.target.value) / 100) * audio.current.duration; }} /><span>{duration ? `${Math.floor(duration / 60)}:${String(duration % 60).padStart(2, "0")}` : "Mensagem de voz"}</span></div><audio ref={audio} src={src} onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)} onEnded={() => { setPlaying(false); setProgress(0); }} onTimeUpdate={event => setProgress(event.currentTarget.duration ? (event.currentTarget.currentTime / event.currentTarget.duration) * 100 : 0)} /></div>;
 }
 
-function MessageBubble({ message, currentUserId, onReply, onDeleteMe, onDeleteAll }: { message: any; currentUserId?: number; onReply: (target: ReplyTarget) => void; onDeleteMe: (id: number) => void; onDeleteAll: (id: number) => void }) {
-  const [actions, setActions] = useState(false); const own = message.senderId === currentUserId;
+function MessageBubble({
+  message,
+  currentUserId,
+  onReply,
+  onDeleteMe,
+  onDeleteAll,
+  onReact,
+}: {
+  message: any;
+  currentUserId?: number;
+  onReply: (target: ReplyTarget) => void;
+  onDeleteMe: (id: number) => void;
+  onDeleteAll: (id: number) => void;
+  onReact: (messageId: number, emoji: string) => void;
+}) {
+  const [actions, setActions] = useState(false);
+  const [showReactions, setShowReactions] = useState(false);
+  const [showFullPicker, setShowFullPicker] = useState(false);
+  const own = message.senderId === currentUserId;
   const mediaUrl = resolveMediaUrl(message.fileUrl, message.fileKey);
-  if (message.deletedAt) return <div className={cn("message-row", own && "own")}><div className="message-bubble deleted">Esta mensagem foi apagada.</div></div>;
-  return <div className={cn("message-row", own && "own")} onMouseEnter={() => setActions(true)} onMouseLeave={() => setActions(false)}>
-    <div className={cn("message-bubble", own && "own")}>
-      {message.messageType === "image" && mediaUrl && <button className="photo-message" onClick={() => window.open(mediaUrl, "_blank", "noopener,noreferrer")}><img src={mediaUrl} alt={message.content || "Imagem enviada"} onError={event => { event.currentTarget.style.display = "none"; toast.error("Não foi possível carregar esta imagem."); }} /></button>}
-      {message.messageType === "audio" && <AudioPlayer src={mediaUrl} duration={message.duration} />}
-      {message.messageType === "file" && mediaUrl && <a className="document-message" href={mediaUrl} target="_blank" rel="noreferrer"><FileText /><span><strong>{message.fileName || "Documento"}</strong><small>Baixar arquivo</small></span></a>}
-      {message.content && (() => {
-        const emojiInfo = getEmojiDisplayStyle(message.content);
-        return emojiInfo.isEmojiOnly ? (
-          <div className={`select-none text-center ${emojiInfo.sizeClass}`}>
-            {message.content}
-          </div>
-        ) : (
-          <p>{linkify(message.content)}</p>
-        );
-      })()}
-      <footer><time>{formatTime(message.createdAt)}</time>{own && <Receipt status={message.receiptStatus} />}</footer>
-    </div>
-    <AnimatePresence>{actions && <motion.div initial={{ opacity: 0, y: 3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="message-actions">
-      <button aria-label="Responder" onClick={() => onReply({ id: message.id, content: message.content, senderName: message.senderName })}><MessageCircleMore /></button>
-      {message.content && <button aria-label="Copiar" onClick={() => navigator.clipboard.writeText(message.content).then(() => toast.success("Mensagem copiada."))}><Copy /></button>}
-      <button aria-label="Apagar para mim" onClick={() => onDeleteMe(message.id)}><Trash2 /></button>
-      {own && <button aria-label="Apagar para todos" onClick={() => onDeleteAll(message.id)}><X /></button>}
-    </motion.div>}</AnimatePresence>
-  </div>;
-}
+  const longPressTimer = useRef<any>(null);
 
+  if (message.deletedAt)
+    return (
+      <div className={cn("message-row", own && "own")}>
+        <div className="message-bubble deleted">Esta mensagem foi apagada.</div>
+      </div>
+    );
+
+  const emojiInfo = message.content ? getEmojiDisplayStyle(message.content) : null;
+  const isJumbo = emojiInfo?.isEmojiOnly;
+
+  const handleTouchStart = () => {
+    longPressTimer.current = setTimeout(() => {
+      setShowReactions(true);
+    }, 450);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+  };
+
+  return (
+    <div
+      className={cn("message-row", own && "own", "relative")}
+      onMouseEnter={() => setActions(true)}
+      onMouseLeave={() => {
+        setActions(false);
+      }}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setShowReactions(true);
+      }}
+    >
+      {/* Floating Quick Reaction Bar */}
+      {(showReactions || (actions && !showFullPicker)) && (
+        <div
+          className={cn("floating-reaction-bar", own ? "right-2" : "left-2")}
+          onMouseEnter={() => setActions(true)}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {["👍", "❤️", "😂", "😮", "🙏", "😢"].map((emoji) => (
+            <button
+              key={emoji}
+              type="button"
+              className="reaction-emoji-btn"
+              onClick={() => {
+                onReact(message.id, emoji);
+                setShowReactions(false);
+              }}
+            >
+              {emoji}
+            </button>
+          ))}
+          <button
+            type="button"
+            className="reaction-plus-btn"
+            onClick={() => {
+              setShowFullPicker(true);
+            }}
+            title="Mais reações"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Full Picker Modal for this message */}
+      {showFullPicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4"
+          onClick={() => {
+            setShowFullPicker(false);
+            setShowReactions(false);
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()}>
+            <EmojiPicker
+              onSelectEmoji={(emoji) => {
+                onReact(message.id, emoji);
+                setShowFullPicker(false);
+                setShowReactions(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      <div className={cn("message-bubble", own && "own", isJumbo && "jumbo-emoji-bubble")}>
+        {message.messageType === "image" && mediaUrl && (
+          <button
+            className="photo-message"
+            onClick={() => window.open(mediaUrl, "_blank", "noopener,noreferrer")}
+          >
+            <img
+              src={mediaUrl}
+              alt={message.content || "Imagem enviada"}
+              onError={(event) => {
+                event.currentTarget.style.display = "none";
+                toast.error("Não foi possível carregar esta imagem.");
+              }}
+            />
+          </button>
+        )}
+        {message.messageType === "audio" && <AudioPlayer src={mediaUrl} duration={message.duration} />}
+        {message.messageType === "file" && mediaUrl && (
+          <a className="document-message" href={mediaUrl} target="_blank" rel="noreferrer">
+            <FileText />
+            <span>
+              <strong>{message.fileName || "Documento"}</strong>
+              <small>Baixar arquivo</small>
+            </span>
+          </a>
+        )}
+        {message.content &&
+          (isJumbo ? (
+            <div className={`select-none text-center ${emojiInfo.sizeClass} ${emojiInfo.animClass}`}>
+              {message.content}
+            </div>
+          ) : (
+            <p>{linkify(message.content)}</p>
+          ))}
+        <footer>
+          <time>{formatTime(message.createdAt)}</time>
+          {own && <Receipt status={message.receiptStatus} />}
+        </footer>
+      </div>
+
+      {/* Message Reaction Badges */}
+      {message.reactions && message.reactions.length > 0 && (
+        <div className={cn("message-reactions-row", own && "own")}>
+          {message.reactions.map((r: any) => (
+            <button
+              key={r.emoji}
+              type="button"
+              className={cn("reaction-pill", r.hasReacted && "active")}
+              onClick={() => onReact(message.id, r.emoji)}
+              title={r.hasReacted ? "Remover sua reação" : "Reagir também"}
+            >
+              <span className="reaction-emoji">{r.emoji}</span>
+              {r.count > 1 && <span className="reaction-count">{r.count}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Action buttons on desktop hover */}
+      <AnimatePresence>
+        {actions && (
+          <motion.div
+            initial={{ opacity: 0, y: 3 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="message-actions"
+          >
+            <button
+              aria-label="Reagir"
+              title="Reagir"
+              onClick={() => setShowReactions((prev) => !prev)}
+            >
+              <Smile className="w-4 h-4" />
+            </button>
+            <button
+              aria-label="Responder"
+              onClick={() =>
+                onReply({ id: message.id, content: message.content, senderName: message.senderName })
+              }
+            >
+              <MessageCircleMore />
+            </button>
+            {message.content && (
+              <button
+                aria-label="Copiar"
+                onClick={() =>
+                  navigator.clipboard.writeText(message.content).then(() => toast.success("Mensagem copiada."))
+                }
+              >
+                <Copy />
+              </button>
+            )}
+            <button aria-label="Apagar para mim" onClick={() => onDeleteMe(message.id)}>
+              <Trash2 />
+            </button>
+            {own && (
+              <button aria-label="Apagar para todos" onClick={() => onDeleteAll(message.id)}>
+                <X />
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 type ActionTarget = {
   type: "conversation" | "contact";
@@ -1112,7 +1298,7 @@ function ContactActionModal({
               target.isBlocked ? (
                 <button
                   type="button"
-                  onClick={() => unblock.mutate({ contactId: targetUserId })}
+                  onClick={() => unblock.mutate({ userId: targetUserId })}
                   className="flex items-center gap-3 p-3 rounded-2xl hover:bg-[var(--surface-soft)] text-left text-sm font-semibold text-emerald-600 dark:text-emerald-400 transition-colors cursor-pointer"
                 >
                   <ShieldCheck className="w-4 h-4" />
@@ -1121,7 +1307,7 @@ function ContactActionModal({
               ) : (
                 <button
                   type="button"
-                  onClick={() => block.mutate({ contactId: targetUserId })}
+                  onClick={() => block.mutate({ userId: targetUserId })}
                   className="flex items-center gap-3 p-3 rounded-2xl hover:bg-[var(--surface-soft)] text-left text-sm font-semibold text-amber-600 dark:text-amber-400 transition-colors cursor-pointer"
                 >
                   <Ban className="w-4 h-4" />
@@ -1193,7 +1379,7 @@ export default function Home() {
   const conversationReady = Boolean(selectedId && selected);
   const history = trpc.messaging.history.useQuery({ conversationId: selectedId || 0 }, { enabled: conversationReady, refetchInterval: 2_000 });
   const typing = trpc.messaging.typing.useQuery({ conversationId: selectedId || 0 }, { enabled: conversationReady, refetchInterval: 1_500 });
-  const acknowledge = trpc.messaging.acknowledge.useMutation(); const deleteMe = trpc.messaging.deleteForMe.useMutation(); const deleteAll = trpc.messaging.deleteForEveryone.useMutation();
+  const acknowledge = trpc.messaging.acknowledge.useMutation(); const deleteMe = trpc.messaging.deleteForMe.useMutation(); const deleteAll = trpc.messaging.deleteForEveryone.useMutation(); const react = trpc.messaging.react.useMutation({ onSuccess: () => utils.messaging.history.invalidate() });
   const heartbeat = trpc.profile.heartbeat.useMutation(); const startCall = trpc.calls.start.useMutation({ onError: error => toast.error(error.message) });
   const pendingCall = trpc.calls.pending.useQuery(undefined, { enabled: Boolean(profile.data?.isComplete), refetchInterval: 1_500 });
   const [composer, setComposer] = useState(""); const [reply, setReply] = useState<ReplyTarget | null>(null); const [image, setImage] = useState<FilePayload | null>(null);
@@ -1574,7 +1760,7 @@ export default function Home() {
 
     <main className={cn("chat-stage", !selectedId && "no-selection")}>{!selectedId ? <section className="stage-empty"><div className="stage-art"><MessageCircleMore /><span /><span /><span /></div><p className="eyebrow">ChatForAll</p><h2>Uma conversa de cada vez.</h2><p>Selecione uma conversa ou comece uma nova quando estiver pronto.</p><Button onClick={() => setNewChatOpen(true)}><Plus /> Nova conversa</Button></section> : <>
       <header className="chat-header"><button className="mobile-only" aria-label="Voltar" onClick={() => setSidebarOpen(true)}><ArrowLeft /></button><button className="chat-person" onClick={() => selected?.type === "group" ? setGroupInfoOpen(true) : setProfileOpen(true)}><Avatar name={selected?.participant?.name || selected?.title || pendingContact?.name} url={selected?.participant?.avatarUrl} /><span><strong>{selected?.participant?.name || selected?.title || pendingContact?.name || "Conversa"}</strong><small className={selected?.participant?.online ? "online-text" : ""}>{selected?.type === "group" ? "Informações do grupo" : presenceText(selected?.participant?.lastSeen, selected?.participant?.online)}</small></span></button><div className="call-actions flex items-center gap-1">{selected?.type !== "group" && <><button aria-label="Iniciar chamada de áudio" disabled={startCall.isPending} onClick={() => selected && startCall.mutate({ conversationId: selected.id, type: "audio" })}><Phone className="w-5 h-5" /></button><button aria-label="Chamar por vídeo" disabled={startCall.isPending} onClick={() => selected && startCall.mutate({ conversationId: selected.id, type: "video" })}><Video className="w-5 h-5" /></button></>}<button type="button" aria-label="Excluir conversa e contato" title="Excluir conversa e contato" className="p-2 rounded-xl hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors" onClick={() => { if (selected) { setContextTarget({ type: "conversation", id: selected.id, name: selected?.participant?.name || selected?.title || "Conversa", nickname: selected?.participant?.nickname || undefined, avatarUrl: selected?.participant?.avatarUrl || undefined, isMuted: selected?.isMuted, isBlocked: selected?.isBlocked }); } }}><Trash2 className="w-5 h-5 text-red-500" /></button><button aria-label="Informações da conversa" onClick={() => selected?.type === "group" ? setGroupInfoOpen(true) : toast.message(selected?.participant?.status || "Sem status.")}><Info className="w-5 h-5" /></button></div></header>
-      <div className="message-scroll" ref={scroll}>{history.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando mensagens</div>}<button className="load-more" onClick={loadOlder} style={{ display: nextOlderCursor ? "block" : "none" }}>Carregar mensagens anteriores</button>{displayedMessages.length === 0 && !history.isLoading && <div className="conversation-empty"><MessageCircleMore /><span>Nenhuma mensagem ainda.</span><small>Envie a primeira mensagem para iniciar a conversa.</small></div>}{displayedMessages.map(message => <MessageBubble key={message.id} message={message} currentUserId={user?.id} onReply={setReply} onDeleteMe={id => deleteMe.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate() })} onDeleteAll={id => deleteAll.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate(), onError: error => toast.error(error.message) })} />)}{typing.data?.map(entry => <div key={entry.userId} className="typing-indicator"><span /><span /><span /> {entry.name} está digitando...</div>)}</div>
+      <div className="message-scroll" ref={scroll}>{history.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando mensagens</div>}<button className="load-more" onClick={loadOlder} style={{ display: nextOlderCursor ? "block" : "none" }}>Carregar mensagens anteriores</button>{displayedMessages.length === 0 && !history.isLoading && <div className="conversation-empty"><MessageCircleMore /><span>Nenhuma mensagem ainda.</span><small>Envie a primeira mensagem para iniciar a conversa.</small></div>}{displayedMessages.map(message => <MessageBubble key={message.id} message={message} currentUserId={user?.id} onReply={setReply} onDeleteMe={id => deleteMe.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate() })} onDeleteAll={id => deleteAll.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate(), onError: error => toast.error(error.message) })} onReact={(msgId, emoji) => react.mutate({ messageId: msgId, emoji })} />)}{typing.data?.map(entry => <div key={entry.userId} className="typing-indicator"><span /><span /><span /> {entry.name} está digitando...</div>)}</div>
       <div className="composer-area">{reply && <div className="reply-bar"><MessageCircleMore /><span>Respondendo a <strong>{reply.senderName || "mensagem"}</strong><small>{reply.content || "Mídia"}</small></span><button onClick={() => setReply(null)}><X /></button></div>}{image && <ImagePreview source={image} onCancel={() => setImage(null)} onSend={caption => submit(caption, image)} />}{recording ? <div className="recording-bar"><button onClick={() => stopRecord(true)} aria-label="Cancelar gravação"><Trash2 /></button><span><i /> Solte para enviar · {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, "0")}</span><Button size="icon" onClick={() => stopRecord(false)}><SendHorizonal /></Button></div> : <div className="composer"><Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
   <PopoverTrigger asChild>
     <button type="button" aria-label="Teclado de Emojis Divertidos" className="emoji-trigger-btn p-2 text-amber-500 hover:text-amber-600 transition-colors shrink-0">
@@ -1584,7 +1770,6 @@ export default function Home() {
   <PopoverContent side="top" align="start" className="p-0 border-none bg-transparent shadow-none w-auto z-50">
     <EmojiPicker onSelectEmoji={(emoji) => {
       typingChange(`${composer}${emoji}`);
-      setEmojiPickerOpen(false);
     }} />
   </PopoverContent>
 </Popover>

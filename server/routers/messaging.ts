@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gt, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { blockedUsers, conversationMembers, conversations, hiddenContacts, messageDeletions, messages, messageStatuses, mutedConversations, typingStates, users } from "../../drizzle/schema";
+import { blockedUsers, conversationMembers, conversations, hiddenContacts, messageDeletions, messageReactions, messages, messageStatuses, mutedConversations, typingStates, users } from "../../drizzle/schema";
 import { requireDatabase } from "../db";
 import { storeMedia } from "../media";
 import { publishRealtime } from "../realtime";
@@ -290,8 +290,44 @@ export const messagingRouter = router({
       ? await db.select({ messageId: messageStatuses.messageId, status: messageStatuses.status }).from(messageStatuses).where(and(inArray(messageStatuses.messageId, ids), eq(messageStatuses.userId, partnerId)))
       : [];
     const statusByMessage = new Map(statuses.map(item => [item.messageId, item.status]));
+
+    const rawReactions = ids.length
+      ? await db
+          .select({
+            id: messageReactions.id,
+            messageId: messageReactions.messageId,
+            userId: messageReactions.userId,
+            emoji: messageReactions.emoji,
+          })
+          .from(messageReactions)
+          .where(inArray(messageReactions.messageId, ids))
+      : [];
+
+    const reactionsByMessage = new Map<number, Array<{ emoji: string; count: number; users: number[]; hasReacted: boolean }>>();
+    for (const r of rawReactions) {
+      let list = reactionsByMessage.get(r.messageId);
+      if (!list) {
+        list = [];
+        reactionsByMessage.set(r.messageId, list);
+      }
+      let item = list.find(x => x.emoji === r.emoji);
+      if (!item) {
+        item = { emoji: r.emoji, count: 0, users: [], hasReacted: false };
+        list.push(item);
+      }
+      item.count++;
+      item.users.push(r.userId);
+      if (r.userId === ctx.user.id) {
+        item.hasReacted = true;
+      }
+    }
+
     return {
-      messages: entries.reverse().map(message => ({ ...message, receiptStatus: statusByMessage.get(message.id) ?? "sent" })),
+      messages: entries.reverse().map(message => ({
+        ...message,
+        receiptStatus: statusByMessage.get(message.id) ?? "sent",
+        reactions: reactionsByMessage.get(message.id) ?? [],
+      })),
       nextCursor: entries.length === 40 ? entries[entries.length - 1]?.createdAt : null,
     };
   }),
@@ -399,5 +435,88 @@ export const messagingRouter = router({
       await db.update(messages).set({ deletedAt: new Date(), content: null, fileKey: null, fileUrl: null }).where(eq(messages.id, input.messageId));
       publishRealtime([ctx.user.id], { type: "message", conversationId: target[0].conversationId });
       return { success: true };
+    }),
+
+  react: protectedProcedure
+    .input(
+      z.object({
+        messageId: z.number().int().positive(),
+        emoji: z.string().min(1).max(32),
+      })
+    )
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      const msg = await db
+        .select({ id: messages.id, conversationId: messages.conversationId })
+        .from(messages)
+        .where(eq(messages.id, input.messageId))
+        .limit(1);
+      if (!msg[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Mensagem não encontrada." });
+      await assertMember(msg[0].conversationId, ctx.user.id);
+
+      const existing = await db
+        .select()
+        .from(messageReactions)
+        .where(and(eq(messageReactions.messageId, input.messageId), eq(messageReactions.userId, ctx.user.id)))
+        .limit(1);
+
+      if (existing[0]) {
+        if (existing[0].emoji === input.emoji) {
+          await db
+            .delete(messageReactions)
+            .where(and(eq(messageReactions.messageId, input.messageId), eq(messageReactions.userId, ctx.user.id)));
+        } else {
+          await db
+            .update(messageReactions)
+            .set({ emoji: input.emoji, createdAt: new Date() })
+            .where(and(eq(messageReactions.messageId, input.messageId), eq(messageReactions.userId, ctx.user.id)));
+        }
+      } else {
+        await db.insert(messageReactions).values({
+          messageId: input.messageId,
+          userId: ctx.user.id,
+          emoji: input.emoji,
+          createdAt: new Date(),
+        });
+      }
+
+      const allForMsg = await db
+        .select({
+          id: messageReactions.id,
+          messageId: messageReactions.messageId,
+          userId: messageReactions.userId,
+          emoji: messageReactions.emoji,
+        })
+        .from(messageReactions)
+        .where(eq(messageReactions.messageId, input.messageId));
+
+      const grouped: Array<{ emoji: string; count: number; users: number[]; hasReacted: boolean }> = [];
+      for (const r of allForMsg) {
+        let item = grouped.find(x => x.emoji === r.emoji);
+        if (!item) {
+          item = { emoji: r.emoji, count: 0, users: [], hasReacted: false };
+          grouped.push(item);
+        }
+        item.count++;
+        item.users.push(r.userId);
+        if (r.userId === ctx.user.id) {
+          item.hasReacted = true;
+        }
+      }
+
+      const targets = await recipientIds(msg[0].conversationId, ctx.user.id).catch(() => []);
+      if (targets.length > 0) {
+        publishRealtime(targets, {
+          type: "reaction",
+          conversationId: msg[0].conversationId,
+          messageId: input.messageId,
+          reactions: grouped,
+        });
+      }
+
+      return {
+        messageId: input.messageId,
+        reactions: grouped,
+      };
     }),
 });

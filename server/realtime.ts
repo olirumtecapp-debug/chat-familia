@@ -1,4 +1,11 @@
-export type RealtimeEvent = { type: "message" | "conversation" | "call" | "presence"; conversationId?: number; callId?: number; at: number };
+export type RealtimeEvent = {
+  type: "message" | "conversation" | "call" | "presence" | "reaction";
+  conversationId?: number;
+  callId?: number;
+  messageId?: number;
+  reactions?: any[];
+  at: number;
+};
 type Subscriber = { userId: number; send: (event: RealtimeEvent) => void };
 
 const subscribers = new Set<Subscriber>();

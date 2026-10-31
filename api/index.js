@@ -35,7 +35,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import crypto2 from "crypto";
 
 // drizzle/schema.ts
-import { index, int, mysqlEnum, mysqlTable, primaryKey, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { index, int, mysqlEnum, mysqlTable, primaryKey, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core";
 var users = mysqlTable(
   "users",
   {
@@ -187,6 +187,20 @@ var hiddenContacts = mysqlTable(
   },
   (table) => [primaryKey({ columns: [table.userId, table.targetUserId] })]
 );
+var messageReactions = mysqlTable(
+  "message_reactions",
+  {
+    id: int("id").autoincrement().primaryKey(),
+    messageId: int("messageId").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    emoji: varchar("emoji", { length: 32 }).notNull(),
+    createdAt: timestamp("createdAt").defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex("message_user_reaction_idx").on(table.messageId, table.userId),
+    index("reaction_msg_idx").on(table.messageId)
+  ]
+);
 
 // server/_core/env.ts
 var ENV = {
@@ -269,7 +283,8 @@ function getInitialStore() {
     typingStates: [],
     blockedUsers: [],
     mutedConversations: [],
-    hiddenContacts: []
+    hiddenContacts: [],
+    messageReactions: []
   };
 }
 var store = loadStore();
@@ -288,6 +303,7 @@ function loadStore() {
       data.blockedUsers = data.blockedUsers || [];
       data.mutedConversations = data.mutedConversations || [];
       data.hiddenContacts = data.hiddenContacts || [];
+      data.messageReactions = data.messageReactions || [];
       return data;
     }
   } catch (e) {
@@ -338,6 +354,7 @@ function getTableName(table) {
   if (name === "blocked_users" || name === "blockedUsers") return "blockedUsers";
   if (name === "muted_conversations" || name === "mutedConversations") return "mutedConversations";
   if (name === "hidden_contacts" || name === "hiddenContacts") return "hiddenContacts";
+  if (name === "message_reactions" || name === "messageReactions") return "messageReactions";
   return "users";
 }
 function extractCondition(cond) {
@@ -464,7 +481,11 @@ function getMockDb() {
           return queryBuilder;
         },
         innerJoin: (joinTable, onCond) => {
-          joins.push({ table: joinTable, on: onCond });
+          joins.push({ table: joinTable, on: onCond, isLeft: false });
+          return queryBuilder;
+        },
+        leftJoin: (joinTable, onCond) => {
+          joins.push({ table: joinTable, on: onCond, isLeft: true });
           return queryBuilder;
         },
         where: (cond) => {
@@ -494,15 +515,18 @@ function getMockDb() {
                   const jCond = extractCondition(j.on);
                   const match = jTableRows.find((jRow) => {
                     if (jCond && jCond.colName) {
-                      return jRow.id === row[jCond.colName] || jRow[jCond.colName] === row.id || jRow.id === row.userId || jRow.userId === row.id;
+                      return jRow.id === row[jCond.colName] || jRow[jCond.colName] === row.id || jRow.id === row.userId || jRow.userId === row.id || jRow.messageId === row.id;
                     }
                     return true;
                   });
                   if (!match) {
-                    matchAll = false;
-                    break;
+                    if (!j.isLeft) {
+                      matchAll = false;
+                      break;
+                    }
+                  } else {
+                    Object.assign(merged, match);
                   }
-                  Object.assign(merged, match);
                 }
                 if (matchAll) joinedList.push(merged);
               }
@@ -1807,8 +1831,36 @@ var messagingRouter = router({
     const ids = entries.map((message) => message.id);
     const statuses = ids.length ? await db.select({ messageId: messageStatuses.messageId, status: messageStatuses.status }).from(messageStatuses).where(and3(inArray3(messageStatuses.messageId, ids), eq4(messageStatuses.userId, partnerId))) : [];
     const statusByMessage = new Map(statuses.map((item) => [item.messageId, item.status]));
+    const rawReactions = ids.length ? await db.select({
+      id: messageReactions.id,
+      messageId: messageReactions.messageId,
+      userId: messageReactions.userId,
+      emoji: messageReactions.emoji
+    }).from(messageReactions).where(inArray3(messageReactions.messageId, ids)) : [];
+    const reactionsByMessage = /* @__PURE__ */ new Map();
+    for (const r of rawReactions) {
+      let list = reactionsByMessage.get(r.messageId);
+      if (!list) {
+        list = [];
+        reactionsByMessage.set(r.messageId, list);
+      }
+      let item = list.find((x) => x.emoji === r.emoji);
+      if (!item) {
+        item = { emoji: r.emoji, count: 0, users: [], hasReacted: false };
+        list.push(item);
+      }
+      item.count++;
+      item.users.push(r.userId);
+      if (r.userId === ctx.user.id) {
+        item.hasReacted = true;
+      }
+    }
     return {
-      messages: entries.reverse().map((message) => ({ ...message, receiptStatus: statusByMessage.get(message.id) ?? "sent" })),
+      messages: entries.reverse().map((message) => ({
+        ...message,
+        receiptStatus: statusByMessage.get(message.id) ?? "sent",
+        reactions: reactionsByMessage.get(message.id) ?? []
+      })),
       nextCursor: entries.length === 40 ? entries[entries.length - 1]?.createdAt : null
     };
   }),
@@ -1897,6 +1949,64 @@ var messagingRouter = router({
     await db.update(messages).set({ deletedAt: /* @__PURE__ */ new Date(), content: null, fileKey: null, fileUrl: null }).where(eq4(messages.id, input.messageId));
     publishRealtime([ctx.user.id], { type: "message", conversationId: target[0].conversationId });
     return { success: true };
+  }),
+  react: protectedProcedure.input(
+    z4.object({
+      messageId: z4.number().int().positive(),
+      emoji: z4.string().min(1).max(32)
+    })
+  ).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    const msg = await db.select({ id: messages.id, conversationId: messages.conversationId }).from(messages).where(eq4(messages.id, input.messageId)).limit(1);
+    if (!msg[0]) throw new TRPCError5({ code: "NOT_FOUND", message: "Mensagem n\xE3o encontrada." });
+    await assertMember(msg[0].conversationId, ctx.user.id);
+    const existing = await db.select().from(messageReactions).where(and3(eq4(messageReactions.messageId, input.messageId), eq4(messageReactions.userId, ctx.user.id))).limit(1);
+    if (existing[0]) {
+      if (existing[0].emoji === input.emoji) {
+        await db.delete(messageReactions).where(and3(eq4(messageReactions.messageId, input.messageId), eq4(messageReactions.userId, ctx.user.id)));
+      } else {
+        await db.update(messageReactions).set({ emoji: input.emoji, createdAt: /* @__PURE__ */ new Date() }).where(and3(eq4(messageReactions.messageId, input.messageId), eq4(messageReactions.userId, ctx.user.id)));
+      }
+    } else {
+      await db.insert(messageReactions).values({
+        messageId: input.messageId,
+        userId: ctx.user.id,
+        emoji: input.emoji,
+        createdAt: /* @__PURE__ */ new Date()
+      });
+    }
+    const allForMsg = await db.select({
+      id: messageReactions.id,
+      messageId: messageReactions.messageId,
+      userId: messageReactions.userId,
+      emoji: messageReactions.emoji
+    }).from(messageReactions).where(eq4(messageReactions.messageId, input.messageId));
+    const grouped = [];
+    for (const r of allForMsg) {
+      let item = grouped.find((x) => x.emoji === r.emoji);
+      if (!item) {
+        item = { emoji: r.emoji, count: 0, users: [], hasReacted: false };
+        grouped.push(item);
+      }
+      item.count++;
+      item.users.push(r.userId);
+      if (r.userId === ctx.user.id) {
+        item.hasReacted = true;
+      }
+    }
+    const targets = await recipientIds(msg[0].conversationId, ctx.user.id).catch(() => []);
+    if (targets.length > 0) {
+      publishRealtime(targets, {
+        type: "reaction",
+        conversationId: msg[0].conversationId,
+        messageId: input.messageId,
+        reactions: grouped
+      });
+    }
+    return {
+      messageId: input.messageId,
+      reactions: grouped
+    };
   })
 });
 
