@@ -1292,33 +1292,68 @@ export default function Home() {
             </div>
           )}
           {conversations.data?.map(conversation => (
-            <button
+            <div
               key={conversation.id}
-              className={cn("conversation-row", selectedId === conversation.id && "active", conversation.unreadCount > 0 && "unread")}
+              className={cn("conversation-row flex items-center justify-between gap-2 p-3 w-full cursor-pointer transition-colors", selectedId === conversation.id && "active", conversation.unreadCount > 0 && "unread")}
               onClick={() => chooseConversation(conversation.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setContextTarget({
+                  type: "conversation",
+                  id: conversation.id,
+                  name: conversation.participant?.name || conversation.title || "Conversa",
+                  nickname: conversation.participant?.nickname || undefined,
+                  avatarUrl: conversation.participant?.avatarUrl || undefined,
+                  isMuted: conversation.isMuted,
+                  isBlocked: conversation.isBlocked,
+                });
+              }}
             >
-              <Avatar name={conversation.participant?.name || conversation.title} url={conversation.participant?.avatarUrl} />
-              <span className="conversation-copy">
-                <span>
-                  <strong>{conversation.participant?.name || conversation.title || "Conversa"}</strong>
-                  <time>{formatTime(conversation.latestMessage?.createdAt)}</time>
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <Avatar name={conversation.participant?.name || conversation.title} url={conversation.participant?.avatarUrl} />
+                <span className="conversation-copy flex-1 min-w-0">
+                  <span className="flex items-center justify-between">
+                    <strong className="truncate font-semibold text-sm text-[var(--ink)]">{conversation.participant?.name || conversation.title || "Conversa"}</strong>
+                    <time className="text-[11px] text-[var(--muted)] shrink-0 ml-1">{formatTime(conversation.latestMessage?.createdAt)}</time>
+                  </span>
+                  <span className="flex items-center justify-between mt-0.5">
+                    <small className="truncate text-xs text-[var(--muted)] flex-1 min-w-0">
+                      {conversation.latestMessage?.deletedAt
+                        ? "Mensagem apagada"
+                        : conversation.latestMessage?.messageType === "image"
+                        ? "Imagem"
+                        : conversation.latestMessage?.messageType === "audio"
+                        ? "Mensagem de voz"
+                        : conversation.latestMessage?.messageType === "file"
+                        ? "Documento"
+                        : conversation.latestMessage?.content || "Conversa iniciada"}
+                    </small>
+                    {conversation.isMuted && <BellOff className="w-3.5 h-3.5 text-amber-500 shrink-0 ml-1" />}
+                    {conversation.unreadCount > 0 && <b className="ml-1.5 px-1.5 py-0.5 bg-[#0080EA] text-white text-[10px] font-bold rounded-full">{conversation.unreadCount}</b>}
+                  </span>
                 </span>
-                <span>
-                  <small>
-                    {conversation.latestMessage?.deletedAt
-                      ? "Mensagem apagada"
-                      : conversation.latestMessage?.messageType === "image"
-                      ? "Imagem"
-                      : conversation.latestMessage?.messageType === "audio"
-                      ? "Mensagem de voz"
-                      : conversation.latestMessage?.messageType === "file"
-                      ? "Documento"
-                      : conversation.latestMessage?.content || "Conversa iniciada"}
-                  </small>
-                  {conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}
-                </span>
-              </span>
-            </button>
+              </div>
+              <button
+                type="button"
+                aria-label="Opções da conversa"
+                title="Opções (Excluir, Silenciar, Bloquear)"
+                className="p-1.5 rounded-full hover:bg-[var(--surface-soft)] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setContextTarget({
+                    type: "conversation",
+                    id: conversation.id,
+                    name: conversation.participant?.name || conversation.title || "Conversa",
+                    nickname: conversation.participant?.nickname || undefined,
+                    avatarUrl: conversation.participant?.avatarUrl || undefined,
+                    isMuted: conversation.isMuted,
+                    isBlocked: conversation.isBlocked,
+                  });
+                }}
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -1339,18 +1374,19 @@ export default function Home() {
             </div>
           )}
           {allContacts.data?.map(contact => (
-            <button
+            <div
               key={contact.id}
-              className="conversation-row hover:bg-[var(--surface-soft)] transition-colors w-full text-left cursor-pointer"
-              onClick={() => createDirect.mutate({ userId: contact.id })}
-              disabled={createDirect.isPending}
+              className="conversation-row hover:bg-[var(--surface-soft)] transition-colors w-full flex items-center justify-between gap-2 p-3 text-left border-b border-[var(--line)]/40"
             >
-              <div className="relative shrink-0">
-                <Avatar name={contact.name} url={contact.avatarUrl} />
-                <span className={cn("presence-dot absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[var(--surface)]", contact.online ? "bg-emerald-500" : "bg-slate-400")} />
-              </div>
-              <span className="conversation-copy flex-1 min-w-0">
-                <span className="flex items-center justify-between">
+              <div
+                className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer"
+                onClick={() => createDirect.mutate({ userId: contact.id })}
+              >
+                <div className="relative shrink-0">
+                  <Avatar name={contact.name} url={contact.avatarUrl} />
+                  <span className={cn("presence-dot absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[var(--surface)]", contact.online ? "bg-emerald-500" : "bg-slate-400")} />
+                </div>
+                <span className="conversation-copy flex-1 min-w-0">
                   <span className="flex items-center gap-1.5 min-w-0">
                     <strong className="truncate font-semibold text-sm text-[var(--ink)]">{contact.name}</strong>
                     {contact.nickname && (
@@ -1359,13 +1395,38 @@ export default function Home() {
                       </span>
                     )}
                   </span>
-                  <span className="text-[11px] font-bold text-[#0080EA] bg-[#0080EA]/10 hover:bg-[#0080EA]/20 px-2 py-0.5 rounded-full shrink-0 ml-2 transition-colors">
-                    Conversar
-                  </span>
+                  <small className="truncate text-xs text-[var(--muted)] block mt-0.5">{contact.email || contact.status || "Disponível"}</small>
                 </span>
-                <small className="truncate text-xs text-[var(--muted)] block mt-0.5">{contact.email || contact.status || "Disponível"}</small>
-              </span>
-            </button>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  size="sm"
+                  className="bg-[#0080EA] hover:bg-[#0060B8] text-white text-xs px-2.5 py-1 h-7 rounded-lg font-medium shadow-sm"
+                  onClick={() => createDirect.mutate({ userId: contact.id })}
+                  disabled={createDirect.isPending}
+                >
+                  Conversar
+                </Button>
+                <button
+                  type="button"
+                  aria-label="Excluir contato"
+                  title="Excluir este contato"
+                  className="p-1.5 rounded-full hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setContextTarget({
+                      type: "contact",
+                      id: contact.id,
+                      name: contact.name,
+                      nickname: contact.nickname || undefined,
+                      avatarUrl: contact.avatarUrl || undefined,
+                    });
+                  }}
+                >
+                  <Trash2 className="w-4 h-4 text-red-500" />
+                </button>
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -1428,21 +1489,39 @@ export default function Home() {
     </aside>
 
     <main className={cn("chat-stage", !selectedId && "no-selection")}>{!selectedId ? <section className="stage-empty"><div className="stage-art"><MessageCircleMore /><span /><span /><span /></div><p className="eyebrow">ChatForAll</p><h2>Uma conversa de cada vez.</h2><p>Selecione uma conversa ou comece uma nova quando estiver pronto.</p><Button onClick={() => setNewChatOpen(true)}><Plus /> Nova conversa</Button></section> : <>
-      <header className="chat-header"><button className="mobile-only" aria-label="Voltar" onClick={() => setSidebarOpen(true)}><ArrowLeft /></button><button className="chat-person" onClick={() => selected?.type === "group" ? setGroupInfoOpen(true) : setProfileOpen(true)}><Avatar name={selected?.participant?.name || selected?.title || pendingContact?.name} url={selected?.participant?.avatarUrl} /><span><strong>{selected?.participant?.name || selected?.title || pendingContact?.name || "Conversa"}</strong><small className={selected?.participant?.online ? "online-text" : ""}>{selected?.type === "group" ? "Informações do grupo" : presenceText(selected?.participant?.lastSeen, selected?.participant?.online)}</small></span></button><div className="call-actions">{selected?.type !== "group" && <><button aria-label="Iniciar chamada de áudio" disabled={startCall.isPending} onClick={() => selected && startCall.mutate({ conversationId: selected.id, type: "audio" })}><Phone /></button><button aria-label="Chamar por vídeo" disabled={startCall.isPending} onClick={() => selected && startCall.mutate({ conversationId: selected.id, type: "video" })}><Video /></button></>}<button aria-label="Informações da conversa" onClick={() => selected?.type === "group" ? setGroupInfoOpen(true) : toast.message(selected?.participant?.status || "Sem status.")}><Info /></button></div></header>
+      <header className="chat-header"><button className="mobile-only" aria-label="Voltar" onClick={() => setSidebarOpen(true)}><ArrowLeft /></button><button className="chat-person" onClick={() => selected?.type === "group" ? setGroupInfoOpen(true) : setProfileOpen(true)}><Avatar name={selected?.participant?.name || selected?.title || pendingContact?.name} url={selected?.participant?.avatarUrl} /><span><strong>{selected?.participant?.name || selected?.title || pendingContact?.name || "Conversa"}</strong><small className={selected?.participant?.online ? "online-text" : ""}>{selected?.type === "group" ? "Informações do grupo" : presenceText(selected?.participant?.lastSeen, selected?.participant?.online)}</small></span></button><div className="call-actions flex items-center gap-1">{selected?.type !== "group" && <><button aria-label="Iniciar chamada de áudio" disabled={startCall.isPending} onClick={() => selected && startCall.mutate({ conversationId: selected.id, type: "audio" })}><Phone className="w-5 h-5" /></button><button aria-label="Chamar por vídeo" disabled={startCall.isPending} onClick={() => selected && startCall.mutate({ conversationId: selected.id, type: "video" })}><Video className="w-5 h-5" /></button></>}<button type="button" aria-label="Excluir conversa e contato" title="Excluir conversa e contato" className="p-2 rounded-xl hover:bg-red-500/10 text-slate-400 hover:text-red-500 transition-colors" onClick={() => { if (selected) { setContextTarget({ type: "conversation", id: selected.id, name: selected?.participant?.name || selected?.title || "Conversa", nickname: selected?.participant?.nickname || undefined, avatarUrl: selected?.participant?.avatarUrl || undefined, isMuted: selected?.isMuted, isBlocked: selected?.isBlocked }); } }}><Trash2 className="w-5 h-5 text-red-500" /></button><button aria-label="Informações da conversa" onClick={() => selected?.type === "group" ? setGroupInfoOpen(true) : toast.message(selected?.participant?.status || "Sem status.")}><Info className="w-5 h-5" /></button></div></header>
       <div className="message-scroll" ref={scroll}>{history.isLoading && <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando mensagens</div>}<button className="load-more" onClick={loadOlder} style={{ display: nextOlderCursor ? "block" : "none" }}>Carregar mensagens anteriores</button>{displayedMessages.length === 0 && !history.isLoading && <div className="conversation-empty"><MessageCircleMore /><span>Nenhuma mensagem ainda.</span><small>Envie a primeira mensagem para iniciar a conversa.</small></div>}{displayedMessages.map(message => <MessageBubble key={message.id} message={message} currentUserId={user?.id} onReply={setReply} onDeleteMe={id => deleteMe.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate() })} onDeleteAll={id => deleteAll.mutate({ messageId: id }, { onSuccess: () => utils.messaging.history.invalidate(), onError: error => toast.error(error.message) })} />)}{typing.data?.map(entry => <div key={entry.userId} className="typing-indicator"><span /><span /><span /> {entry.name} está digitando...</div>)}</div>
       <div className="composer-area">{reply && <div className="reply-bar"><MessageCircleMore /><span>Respondendo a <strong>{reply.senderName || "mensagem"}</strong><small>{reply.content || "Mídia"}</small></span><button onClick={() => setReply(null)}><X /></button></div>}{image && <ImagePreview source={image} onCancel={() => setImage(null)} onSend={caption => submit(caption, image)} />}{recording ? <div className="recording-bar"><button onClick={() => stopRecord(true)} aria-label="Cancelar gravação"><Trash2 /></button><span><i /> Solte para enviar · {Math.floor(recordingTime / 60)}:{String(recordingTime % 60).padStart(2, "0")}</span><Button size="icon" onClick={() => stopRecord(false)}><SendHorizonal /></Button></div> : <div className="composer"><Popover open={emojiPickerOpen} onOpenChange={setEmojiPickerOpen}>
   <PopoverTrigger asChild>
-    <button type="button" aria-label="Teclado de Emojis Divertidos" className="hover:text-[#0080EA] transition-colors">
-      <Smile />
+    <button type="button" aria-label="Teclado de Emojis Divertidos" className="emoji-trigger-btn p-2 text-amber-500 hover:text-amber-600 transition-colors shrink-0">
+      <Smile className="w-6 h-6" />
     </button>
   </PopoverTrigger>
-  <PopoverContent side="top" align="start" className="p-0 border-none bg-transparent shadow-none w-auto">
+  <PopoverContent side="top" align="start" className="p-0 border-none bg-transparent shadow-none w-auto z-50">
     <EmojiPicker onSelectEmoji={(emoji) => {
       typingChange(`${composer}${emoji}`);
       setEmojiPickerOpen(false);
     }} />
   </PopoverContent>
-</Popover><button aria-label="Anexar imagem ou documento" onClick={() => imageInput.current?.click()}><Paperclip /></button><input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} /><Textarea value={composer} onChange={event => typingChange(event.target.value)} placeholder="Escreva uma mensagem" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} /><button aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }}><Mic /></button><Button size="icon" aria-label="Enviar mensagem" disabled={send.isPending || (!composer.trim() && !image)} onClick={() => submit()}>{send.isPending ? <Loader2 className="animate-spin" /> : <SendHorizonal />}</Button></div>}</div>
+</Popover>
+<input
+  type="text"
+  enterKeyHint="send"
+  className="chat-single-input flex-1 bg-transparent border-0 outline-none px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--muted)]"
+  value={composer}
+  onChange={event => typingChange(event.target.value)}
+  placeholder="Escreva uma mensagem..."
+  onKeyDown={event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submit();
+    }
+  }}
+/>
+<button type="button" aria-label="Anexar imagem ou documento" onClick={() => imageInput.current?.click()} className="p-2 text-slate-400 hover:text-slate-600 transition-colors shrink-0"><Paperclip className="w-5 h-5" /></button>
+<input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} />
+<button type="button" aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }} className="p-2 text-slate-400 hover:text-slate-600 transition-colors shrink-0"><Mic className="w-5 h-5" /></button>
+<Button size="icon" aria-label="Enviar mensagem" disabled={send.isPending || (!composer.trim() && !image)} onClick={() => submit()} className="rounded-full w-10 h-10 bg-[#0080EA] hover:bg-[#0060B8] shrink-0">{send.isPending ? <Loader2 className="animate-spin w-4 h-4" /> : <SendHorizonal className="w-4 h-4 text-white" />}</Button></div>}</div>
     </>}</main>
     <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><ContactActionModal target={contextTarget} onClose={() => setContextTarget(null)} onDeleted={() => setSelectedId(null)} />
     <GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />

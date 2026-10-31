@@ -1,7 +1,6 @@
 // Service Worker for ChatForAll PWA
-const CACHE_NAME = 'chatforall-cache-v1';
+const CACHE_NAME = 'chatforall-cache-v3';
 const ASSETS_TO_CACHE = [
-  '/',
   '/manifest.webmanifest',
   '/icon-192.png',
   '/icon-512.png',

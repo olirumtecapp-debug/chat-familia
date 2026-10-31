@@ -269,7 +269,7 @@ input::placeholder, textarea::placeholder {
   gap: 6px;
 }
 
-.header-tools button, .call-actions button, .composer > button, .chat-header > button, .reply-bar > button, .recording-bar > button {
+.header-tools button, .call-actions button, .composer > button, .chat-header > button:not(.chat-person), .reply-bar > button, .recording-bar > button {
   border: 0;
   background: transparent;
   color: var(--muted);
@@ -281,7 +281,7 @@ input::placeholder, textarea::placeholder {
   transition: all 0.15s ease;
 }
 
-.header-tools button:hover, .call-actions button:hover, .composer > button:hover, .chat-header > button:hover {
+.header-tools button:hover, .call-actions button:hover, .composer > button:hover, .chat-header > button:not(.chat-person):hover {
   background: var(--surface-soft);
   color: var(--accent);
 }
@@ -433,14 +433,44 @@ input::placeholder, textarea::placeholder {
   border: 0;
   background: transparent;
   color: var(--ink);
-  display: flex;
-  align-items: center;
-  gap: 11px;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px !important;
   text-align: left;
+  flex: 1;
   min-width: 0;
+  width: auto !important;
+  height: auto !important;
+  cursor: pointer;
 }
 
-.chat-person > span { display: grid; gap: 2px; }
+.chat-person > span {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+  min-width: 0;
+  flex: 1;
+}
+
+.chat-person strong {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.chat-person small {
+  font-size: 0.75rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
 .online-text { color: var(--accent) !important; font-weight: 600; }
 
 .message-scroll {
@@ -592,28 +622,29 @@ input::placeholder, textarea::placeholder {
 
 .composer {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 6px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   background: var(--surface);
   border: 1px solid var(--line);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-  border-radius: 20px;
+  border-radius: 28px;
 }
 
-.composer textarea {
+.composer input[type="text"] {
   border: 0;
   box-shadow: none !important;
-  resize: none;
-  min-height: 40px;
-  max-height: 120px;
-  padding: 10px 8px;
+  height: 42px;
+  padding: 8px 12px;
   background: transparent;
   color: var(--ink);
   font-size: 0.95rem;
+  flex: 1;
+  min-width: 0;
+  outline: none;
 }
-.composer textarea:focus { outline: none; }
-.composer .button { height: 38px; width: 38px; border-radius: 12px; flex: none; }
+.composer input[type="text"]:focus { outline: none; }
+.composer .button { height: 40px; width: 40px; border-radius: 50%; flex: none; }
 
 .reply-bar, .recording-bar {
   display: flex;
@@ -790,14 +821,12 @@ input::placeholder, textarea::placeholder {
   .sidebar-footer { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .chat-header { height: 66px; padding: 0 12px; }
   .chat-header .avatar-image, .chat-header .avatar-fallback { width: 36px; height: 36px; border-radius: 12px; }
-  .call-actions button:last-child { display: none; }
   .message-scroll { padding: 16px 12px; gap: 6px; }
   .message-row { max-width: 90%; }
   .message-bubble { font-size: 0.92rem; }
   .composer-area { padding: 0 10px max(10px, env(safe-area-inset-bottom)); }
-  .composer { border-radius: 18px; }
-  .composer > button:first-child { display: none; }
-  .composer textarea { font-size: 0.94rem; }
+  .composer { border-radius: 24px; padding: 6px 8px; }
+  .composer input[type="text"] { font-size: 0.95rem; }
   .auth-panel { padding: 36px 20px; }
   .auth-panel h1 { font-size: 2.25rem; }
   .profile-dialog { width: calc(100vw - 24px); }
