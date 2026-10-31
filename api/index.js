@@ -217,11 +217,13 @@ var ENV = {
 // server/mockDb.ts
 import fs from "fs";
 import path from "path";
+var STORE_VERSION = "20261031_02";
 var IS_VERCEL = !!process.env.VERCEL;
 var DATA_DIR = IS_VERCEL ? "/tmp" : path.resolve(process.cwd(), "server", "data");
 var STORE_FILE = path.join(DATA_DIR, "chat-store.json");
 function getInitialStore() {
   return {
+    version: STORE_VERSION,
     users: [],
     conversations: [],
     conversationMembers: [],
@@ -257,6 +259,13 @@ function loadStore() {
       const parsed = JSON.parse(raw);
       const data = reviveDates(parsed);
       if (data) {
+        if (data.version !== STORE_VERSION) {
+          console.log("[mockDb] Version mismatch or stale store. Re-initializing store.");
+          const fresh = getInitialStore();
+          store = fresh;
+          persistStore();
+          return fresh;
+        }
         data.users = Array.isArray(data.users) ? data.users : [];
         data.conversations = Array.isArray(data.conversations) ? data.conversations : [];
         data.conversationMembers = Array.isArray(data.conversationMembers) ? data.conversationMembers : [];
@@ -305,6 +314,11 @@ function persistStore() {
   } catch (e) {
     console.warn("[mockDb] Persist error:", e);
   }
+}
+function resetChatStore() {
+  store = getInitialStore();
+  persistStore();
+  return store;
 }
 function getTableName(table) {
   if (!table) return "users";
@@ -664,18 +678,33 @@ function getMockDb() {
       };
     },
     delete: (table) => {
+      const tableName = getTableName(table);
+      const executeDelete = (condition) => {
+        const list = store[tableName] || [];
+        const beforeLen = list.length;
+        if (condition) {
+          store[tableName] = list.filter((item) => !matchesCondition(item, condition));
+        } else {
+          store[tableName] = [];
+        }
+        const affected = beforeLen - store[tableName].length;
+        persistStore();
+        return [{ affectedRows: affected }];
+      };
       return {
+        then: (resolve, reject) => {
+          try {
+            return Promise.resolve(executeDelete()).then(resolve, reject);
+          } catch (err) {
+            if (reject) return Promise.reject(err).catch(reject);
+            throw err;
+          }
+        },
         where: (condition) => {
           return {
             then: (resolve, reject) => {
               try {
-                const tableName = getTableName(table);
-                const list = store[tableName] || [];
-                const beforeLen = list.length;
-                store[tableName] = list.filter((item) => !matchesCondition(item, condition));
-                const affected = beforeLen - store[tableName].length;
-                persistStore();
-                return Promise.resolve([{ affectedRows: affected }]).then(resolve, reject);
+                return Promise.resolve(executeDelete(condition)).then(resolve, reject);
               } catch (err) {
                 if (reject) return Promise.reject(err).catch(reject);
                 throw err;
@@ -1088,24 +1117,6 @@ var SDKServer = class {
     const sessionUserId = session.openId;
     const signedInAt = /* @__PURE__ */ new Date();
     let user = await getUserByOpenId(sessionUserId);
-    if (!user && (session.openId.startsWith("local_") || session.openId === "murilo_silva_pai")) {
-      const isMurilo = session.openId === "murilo_silva_pai";
-      const isEsposa = session.openId === "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a";
-      const isFilho = session.openId === "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b";
-      const email = isMurilo ? "olirumtecapp@gmail.com" : isEsposa ? "esposa@gmail.com" : isFilho ? "filho@gmail.com" : null;
-      const nickname = isMurilo ? "@olirumpai" : isEsposa ? "@esposasilva" : isFilho ? "@olirumfilho" : null;
-      const id = isMurilo ? 1 : isEsposa ? 3 : isFilho ? 4 : void 0;
-      await upsertUser({
-        ...id ? { id } : {},
-        openId: session.openId,
-        name: session.name || (isMurilo ? "Murilo Silva" : isEsposa ? "Esposa Silva" : isFilho ? "Filho Silva" : "Usu\xE1rio"),
-        email,
-        nickname,
-        loginMethod: "commercial-auth",
-        lastSignedIn: signedInAt
-      });
-      user = await getUserByOpenId(sessionUserId);
-    }
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
@@ -2336,6 +2347,7 @@ var appRouter = router({
       return { user, token: sessionToken, sessionToken };
     }),
     resetAllData: publicProcedure.mutation(async () => {
+      resetChatStore();
       const dbInstance = await requireDatabase();
       try {
         await dbInstance.delete(callSignals);

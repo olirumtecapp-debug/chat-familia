@@ -1,7 +1,10 @@
 import fs from "fs";
 import path from "path";
 
+const STORE_VERSION = "20261031_02";
+
 export interface ChatStore {
+  version?: string;
   users: Array<{
     id: number;
     openId: string;
@@ -121,6 +124,7 @@ const STORE_FILE = path.join(DATA_DIR, "chat-store.json");
 
 function getInitialStore(): ChatStore {
   return {
+    version: STORE_VERSION,
     users: [],
     conversations: [],
     conversationMembers: [],
@@ -161,6 +165,13 @@ function loadStore(): ChatStore {
       const data = reviveDates(parsed);
 
       if (data) {
+        if (data.version !== STORE_VERSION) {
+          console.log("[mockDb] Version mismatch or stale store. Re-initializing store.");
+          const fresh = getInitialStore();
+          store = fresh;
+          persistStore();
+          return fresh;
+        }
         data.users = Array.isArray(data.users) ? data.users : [];
         data.conversations = Array.isArray(data.conversations) ? data.conversations : [];
         data.conversationMembers = Array.isArray(data.conversationMembers) ? data.conversationMembers : [];
@@ -672,18 +683,34 @@ export function getMockDb() {
     },
 
     delete: (table: any) => {
+      const tableName = getTableName(table);
+      const executeDelete = (condition?: any) => {
+        const list = (store[tableName] as any[]) || [];
+        const beforeLen = list.length;
+        if (condition) {
+          (store as any)[tableName] = list.filter(item => !matchesCondition(item, condition));
+        } else {
+          (store as any)[tableName] = [];
+        }
+        const affected = beforeLen - (store[tableName] as any[]).length;
+        persistStore();
+        return [{ affectedRows: affected }];
+      };
+
       return {
+        then: (resolve: any, reject: any) => {
+          try {
+            return Promise.resolve(executeDelete()).then(resolve, reject);
+          } catch (err) {
+            if (reject) return Promise.reject(err).catch(reject);
+            throw err;
+          }
+        },
         where: (condition: any) => {
           return {
             then: (resolve: any, reject: any) => {
               try {
-                const tableName = getTableName(table);
-                const list = (store[tableName] as any[]) || [];
-                const beforeLen = list.length;
-                (store as any)[tableName] = list.filter(item => !matchesCondition(item, condition));
-                const affected = beforeLen - (store[tableName] as any[]).length;
-                persistStore();
-                return Promise.resolve([{ affectedRows: affected }]).then(resolve, reject);
+                return Promise.resolve(executeDelete(condition)).then(resolve, reject);
               } catch (err) {
                 if (reject) return Promise.reject(err).catch(reject);
                 throw err;

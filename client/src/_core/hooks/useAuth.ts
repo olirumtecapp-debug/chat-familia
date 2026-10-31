@@ -61,6 +61,16 @@ export function useAuth(options?: UseAuthOptions) {
   ]);
 
   useEffect(() => {
+    if (meQuery.isError) {
+      try {
+        localStorage.removeItem("chat_session_token");
+        sessionStorage.removeItem("chat_session_token");
+        document.cookie = "app_session_id=; path=/; max-age=-1; SameSite=Lax; Secure";
+      } catch {}
+    }
+  }, [meQuery.isError]);
+
+  useEffect(() => {
     if (!redirectOnUnauthenticated) return;
     if (meQuery.isLoading || logoutMutation.isPending) return;
     if (state.user) return;

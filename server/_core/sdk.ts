@@ -283,25 +283,6 @@ class SDKServer {
     const signedInAt = new Date();
     let user = await db.getUserByOpenId(sessionUserId);
 
-    // If local user not in DB (e.g. serverless cold start), auto-restore from validated session JWT
-    if (!user && (session.openId.startsWith("local_") || session.openId === "murilo_silva_pai")) {
-      const isMurilo = session.openId === "murilo_silva_pai";
-      const isEsposa = session.openId === "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a";
-      const isFilho = session.openId === "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b";
-      const email = isMurilo ? "olirumtecapp@gmail.com" : (isEsposa ? "esposa@gmail.com" : (isFilho ? "filho@gmail.com" : null));
-      const nickname = isMurilo ? "@olirumpai" : (isEsposa ? "@esposasilva" : (isFilho ? "@olirumfilho" : null));
-      const id = isMurilo ? 1 : (isEsposa ? 3 : (isFilho ? 4 : undefined));
-      await db.upsertUser({
-        ...(id ? { id } : {}),
-        openId: session.openId,
-        name: session.name || (isMurilo ? "Murilo Silva" : (isEsposa ? "Esposa Silva" : (isFilho ? "Filho Silva" : "Usuário"))),
-        email,
-        nickname: nickname as any,
-        loginMethod: "commercial-auth",
-        lastSignedIn: signedInAt,
-      });
-      user = await db.getUserByOpenId(sessionUserId);
-    }
 
     // If OAuth user not in DB, sync from OAuth server automatically
     if (!user) {

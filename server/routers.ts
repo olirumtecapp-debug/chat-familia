@@ -123,6 +123,7 @@ export const appRouter = router({
       return { user, token: sessionToken, sessionToken };
     }),
     resetAllData: publicProcedure.mutation(async () => {
+      db.resetChatStore();
       const dbInstance = await db.requireDatabase();
       try { await dbInstance.delete(callSignals); } catch {}
       try { await dbInstance.delete(calls); } catch {}
