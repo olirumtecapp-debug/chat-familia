@@ -90,6 +90,22 @@ export interface ChatStore {
     expiresAt: Date;
     updatedAt: Date;
   }>;
+  blockedUsers: Array<{
+    userId: number;
+    blockedUserId: number;
+    createdAt: Date;
+  }>;
+  mutedConversations: Array<{
+    userId: number;
+    conversationId: number;
+    mutedUntil: Date | null;
+    createdAt: Date;
+  }>;
+  hiddenContacts: Array<{
+    userId: number;
+    targetUserId: number;
+    createdAt: Date;
+  }>;
 }
 
 const IS_VERCEL = !!process.env.VERCEL;
@@ -157,6 +173,9 @@ function getInitialStore(): ChatStore {
     calls: [],
     callSignals: [],
     typingStates: [],
+    blockedUsers: [],
+    mutedConversations: [],
+    hiddenContacts: [],
   };
 }
 
@@ -173,6 +192,13 @@ function loadStore(): ChatStore {
         // Strip out any dummy/placeholder conversations
         data.conversations = data.conversations.filter((c: any) => c.title !== "Família Silva ❤️");
       }
+      if (data && Array.isArray(data.users)) {
+        // Strip out any test/placeholder users
+        data.users = data.users.filter((u: any) => u.email !== "carlos.familia@teste.com" && u.name !== "Tio Carlos");
+      }
+      data.blockedUsers = data.blockedUsers || [];
+      data.mutedConversations = data.mutedConversations || [];
+      data.hiddenContacts = data.hiddenContacts || [];
       return data;
     }
   } catch (e) {
@@ -198,6 +224,9 @@ function reviveDates(obj: any): any {
 }
 
 function persistStore() {
+  if (process.env.VITEST) {
+    return; // Don't overwrite persistent file during test runs
+  }
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -231,6 +260,9 @@ function getTableName(table: any): keyof ChatStore {
   if (name === "calls") return "calls";
   if (name === "call_signals" || name === "callSignals") return "callSignals";
   if (name === "typing_states" || name === "typingStates") return "typingStates";
+  if (name === "blocked_users" || name === "blockedUsers") return "blockedUsers";
+  if (name === "muted_conversations" || name === "mutedConversations") return "mutedConversations";
+  if (name === "hidden_contacts" || name === "hiddenContacts") return "hiddenContacts";
   return "users";
 }
 

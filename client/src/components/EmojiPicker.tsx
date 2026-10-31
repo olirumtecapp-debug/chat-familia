@@ -7,50 +7,57 @@ interface EmojiPickerProps {
 
 const EMOJI_CATEGORIES = [
   {
-    id: "fun",
-    label: "🔥",
-    title: "Divertidos & Populares",
+    id: "animated",
+    label: "✨",
+    title: "Animados & 3D",
     emojis: [
-      "🔥", "🚀", "🎉", "💯", "✨", "❤️‍🔥", "💥", "🥳", "😎", "🤩",
-      "😂", "🤣", "🤪", "😜", "🤯", "🥰", "😍", "🤫", "🫡", "🤝",
-      "👏", "🙌", "💪", "👑", "⭐", "🌈", "🍕", "🍔", "☕", "🍻"
+      "🔥", "❤️", "🎉", "😂", "🥰", "🚀", "⭐", "💥", "🥳", "✨",
+      "👏", "💯", "😍", "🤩", "💃", "🕺", "🍕", "☕", "🍿", "⚡",
+      "😎", "🤗", "😱", "🤯", "💪", "👑", "💎", "🎈", "🥂", "🍻",
+      "🌈", "🌟", "🏆", "🎯", "🛸", "🎸", "🎧", "🎮", "👾", "🤖"
     ],
   },
   {
     id: "faces",
     label: "😀",
-    title: "Carinhas & Emoções",
+    title: "Carinhas & Expressões",
     emojis: [
-      "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "🥹", "😊", "😇",
-      "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛",
-      "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏", "😒",
-      "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢",
-      "😭", "😮‍💨", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😱", "😨",
-      "😰", "😥", "😓", "🤗", "🫡", "🤔", "🫣", "🤫", "🤥", "😶", "😐", "😑"
+      "😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃",
+      "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "😚", "😙",
+      "😋", "😛", "😜", "🤪", "😝", "🤑", "🤗", "🤭", "🤫", "🤔",
+      "🤐", "🤨", "😐", "😑", "😶", "😏", "😒", "🙄", "😬", "🤥",
+      "😌", "😔", "😪", "🤤", "😴", "😷", "🤒", "🤕", "🤢", "🤮",
+      "🥵", "🥶", "🥴", "😵", "🤯", "🤠", "🥳", "🥸", "😎", "🤓"
     ],
   },
   {
-    id: "people",
-    label: "👨‍👩‍👦",
-    title: "Família & Gestos",
+    id: "hearts",
+    label: "❤️",
+    title: "Corações & Amor",
     emojis: [
-      "👨‍👩‍👧‍👦", "👨‍👩‍👦", "👨‍👩‍👧", "👨‍👨‍👦", "👩‍👩‍👧", "👨‍👦", "👩‍👧", "👶", "👧", "👦", "👩", "👨",
-      "👵", "👴", "🧓", "🧑‍🦰", "🧑‍🦱", "🧑‍🦳", "👱‍♀️", "👱‍♂️", "👋", "🤚", "🖐️", "✋",
-      "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🫰", "🤟", "🤘", "🤙", "👈", "👉",
-      "👆", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐",
-      "🤲", "🤝", "🙏", "✍️", "💅", "🤳", "💪", "🦾"
+      "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔",
+      "❤️‍🔥", "❤️‍🩹", "💖", "💗", "💓", "💞", "💕", "💌", "💘", "💝",
+      "💟", "❣️", "🌹", "💐", "🌺", "🌸", "🌷", "🌻", "🌼", "✨"
     ],
   },
   {
-    id: "nature",
+    id: "gestures",
+    label: "👍",
+    title: "Gestos & Mãos",
+    emojis: [
+      "👍", "👎", "👊", "✊", "🤛", "🤜", "👏", "🙌", "👐", "🤲",
+      "🤝", "🙏", "✍️", "💅", "🤳", "💪", "✌️", "🤞", "🤟", "🤘",
+      "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👋", "🤚", "🖐️"
+    ],
+  },
+  {
+    id: "animals",
     label: "🐶",
     title: "Animais & Natureza",
     emojis: [
-      "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁",
-      "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🦆", "🦅", "🦉", "🦇",
-      "🐺", "🐗", "🐴", "🦄", "🐝", "🪱", "🐛", "🦋", "🐌", "🐞", "🐜", "🪰",
-      "🌸", "💮", "🪷", "🏵️", "🌹", "🥀", "🌺", "🌻", "🌼", "🌷", "🌱", "🪴",
-      "🌲", "🌳", "🌴", "🌵", "🌾", "🌿", "☘️", "🍀", "🍁", "🍂", "🍃"
+      "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯",
+      "🦁", "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🦆",
+      "🦅", "🦉", "🦇", "🐺", "🐗", "🐴", "🦄", "🐝", "🐛", "🦋"
     ],
   },
   {
@@ -58,39 +65,25 @@ const EMOJI_CATEGORIES = [
     label: "🍕",
     title: "Comidas & Bebidas",
     emojis: [
-      "🍕", "🍔", "🍟", "🌭", "🍿", "🥓", "🍳", "🧇", "🥞", "🧀", "🥖", "🥐",
-      "🍞", "🥯", "🥨", "🥩", "🍗", "🍖", "🥟", "🍣", "🍱", "🍛", "🍜", "🍝",
-      "🍰", "🎂", "🧁", "🥧", "🍫", "🍬", "🍭", "🍮", "🍯", "☕", "🍵", "🧃",
-      "🥤", "🧋", "🍶", "🍺", "🍻", "🥂", "🍷", "🥃", "🍸", "🍹", "🧉", "🍾",
-      "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑",
-      "🥭", "🍍", "🥥", "🥝", "🍅", "🥑", "🥦", "🌽", "🥕", "🧄", "🧅", "🥔"
-    ],
-  },
-  {
-    id: "symbols",
-    label: "❤️",
-    title: "Corações & Especiais",
-    emojis: [
-      "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹",
-      "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "☮️", "✝️", "☪️",
-      "⭐", "🌟", "✨", "⚡", "☄️", "💥", "🔥", "🌈", "☀️", "🌤️", "⛅", "🌧️",
-      "❄️", "💨", "🌊", "🔔", "🔕", "📢", "📣", "💬", "💭", "💯", "🎯", "🎲"
+      "🍕", "🍔", "🍟", "🌭", "🥪", "🌮", "🌯", "🥙", "🧆", "🥚",
+      "🍳", "🥞", "🧇", "🥓", "🥩", "🍗", "🍖", "🍣", "🍦", "🍧",
+      "🍨", "🍩", "🍪", "🎂", "🍰", "🧁", "🍫", "🍬", "🍭", "☕"
     ],
   },
 ];
 
 export function EmojiPicker({ onSelectEmoji }: EmojiPickerProps) {
-  const [activeTab, setActiveTab] = useState("fun");
+  const [activeTab, setActiveTab] = useState("animated");
 
   return (
-    <div className="w-[310px] sm:w-[350px] p-2 bg-white dark:bg-slate-900 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800">
+    <div className="w-[310px] sm:w-[350px] p-2 bg-[var(--surface)] text-[var(--ink)] rounded-2xl shadow-2xl border border-[var(--line)]">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full grid grid-cols-6 h-9 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl mb-2">
+        <TabsList className="w-full grid grid-cols-6 h-9 p-1 bg-[var(--surface-soft)] rounded-xl mb-2">
           {EMOJI_CATEGORIES.map((cat) => (
             <TabsTrigger
               key={cat.id}
               value={cat.id}
-              className="text-base p-0 data-[state=active]:bg-white dark:data-[state=active]:bg-slate-700 data-[state=active]:shadow-xs rounded-lg transition-all"
+              className="text-base p-0 data-[state=active]:bg-[var(--surface)] data-[state=active]:shadow-xs rounded-lg transition-all"
               title={cat.title}
             >
               {cat.label}
@@ -101,20 +94,20 @@ export function EmojiPicker({ onSelectEmoji }: EmojiPickerProps) {
         {EMOJI_CATEGORIES.map((cat) => (
           <TabsContent key={cat.id} value={cat.id} className="mt-0 focus-visible:outline-none">
             <div className="flex items-center justify-between px-1 mb-1.5">
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+              <span className="text-xs font-semibold text-[var(--ink)]">
                 {cat.title}
               </span>
-              <span className="text-[10px] text-slate-400">
-                {cat.emojis.length} opções
+              <span className="text-[10px] text-[var(--muted)]">
+                {cat.emojis.length} emojis
               </span>
             </div>
-            <div className="grid grid-cols-6 sm:grid-cols-7 gap-1.5 p-1 max-h-52 overflow-y-auto rounded-xl bg-slate-50/50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/50">
+            <div className="grid grid-cols-6 sm:grid-cols-7 gap-1.5 p-1 max-h-52 overflow-y-auto rounded-xl bg-[var(--surface-soft)] border border-[var(--line)]">
               {cat.emojis.map((emoji, idx) => (
                 <button
                   type="button"
                   key={idx}
                   onClick={() => onSelectEmoji(emoji)}
-                  className="w-10 h-10 flex items-center justify-center text-2xl hover:scale-130 active:scale-95 transition-all rounded-xl hover:bg-white dark:hover:bg-slate-800 cursor-pointer shadow-xs hover:shadow"
+                  className="w-10 h-10 flex items-center justify-center text-2xl hover:scale-130 active:scale-95 transition-all rounded-xl hover:bg-[var(--surface)] cursor-pointer shadow-xs hover:shadow"
                 >
                   {emoji}
                 </button>

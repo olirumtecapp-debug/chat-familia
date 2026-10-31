@@ -9,46 +9,35 @@
       "avatarKey": null,
       "avatarUrl": null,
       "status": "Disponível 🚀",
-      "lastSeen": "2026-10-30T20:45:30.905Z",
+      "lastSeen": "2026-10-30T23:56:00.789Z",
       "loginMethod": "commercial-auth",
       "role": "admin",
       "createdAt": "2026-10-30T15:31:41.931Z",
-      "updatedAt": "2026-10-30T20:45:30.905Z",
-      "lastSignedIn": "2026-10-30T20:45:30.905Z"
-    },
-    {
-      "id": 2,
-      "createdAt": "2026-10-30T15:31:43.017Z",
-      "updatedAt": "2026-10-30T20:45:35.757Z",
-      "openId": "local_7e6c25ff2e0a8fa23542f61fc881b01cc9edbe7ddecdeb05681ab9d0ca",
-      "name": "Tio Carlos",
-      "email": "carlos.familia@teste.com",
-      "loginMethod": "commercial-auth",
-      "lastSignedIn": "2026-10-30T20:45:35.757Z",
-      "lastSeen": "2026-10-30T20:45:35.757Z"
+      "updatedAt": "2026-10-30T23:56:00.789Z",
+      "lastSignedIn": "2026-10-30T23:56:00.789Z"
     },
     {
       "id": 3,
       "createdAt": "2026-10-30T15:34:35.445Z",
-      "updatedAt": "2026-10-30T20:45:30.934Z",
+      "updatedAt": "2026-10-30T23:56:00.891Z",
       "openId": "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a",
       "name": "Esposa Silva",
       "email": "esposa@gmail.com",
       "loginMethod": "commercial-auth",
-      "lastSignedIn": "2026-10-30T20:45:30.934Z",
-      "lastSeen": "2026-10-30T20:45:30.934Z",
+      "lastSignedIn": "2026-10-30T23:56:00.890Z",
+      "lastSeen": "2026-10-30T23:56:00.891Z",
       "nickname": "@esposasilva"
     },
     {
       "id": 4,
       "createdAt": "2026-10-30T15:34:35.458Z",
-      "updatedAt": "2026-10-30T20:45:30.938Z",
+      "updatedAt": "2026-10-30T23:56:00.899Z",
       "openId": "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b",
       "name": "Filho Silva",
       "email": "filho@gmail.com",
       "loginMethod": "commercial-auth",
-      "lastSignedIn": "2026-10-30T20:45:30.938Z",
-      "lastSeen": "2026-10-30T20:45:30.938Z",
+      "lastSignedIn": "2026-10-30T23:56:00.898Z",
+      "lastSeen": "2026-10-30T23:56:00.898Z",
       "nickname": "@olirumfilho"
     }
   ],
@@ -59,5 +48,8 @@
   "messageDeletions": [],
   "calls": [],
   "callSignals": [],
-  "typingStates": []
+  "typingStates": [],
+  "blockedUsers": [],
+  "mutedConversations": [],
+  "hiddenContacts": []
 }

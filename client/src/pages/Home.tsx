@@ -23,7 +23,7 @@ import { resolveMediaUrl } from "@shared/media";
 import { getEmojiDisplayStyle } from "@/lib/emojiUtils";
 import { EmojiPicker } from "@/components/EmojiPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { UserPlus, User, AtSign, Mail, Lock, Sparkles, ShieldCheck } from "lucide-react";
+import { UserPlus, User, AtSign, Mail, Lock, Sparkles, ShieldCheck, BellOff, Volume2, Ban, MoreVertical, AlertTriangle } from "lucide-react";
 
 type FilePayload = { dataUrl: string; name: string; duration?: number; kind: "image" | "file" };
 type ReplyTarget = { id: number; content: string | null; senderName: string | null };
@@ -878,6 +878,248 @@ function MessageBubble({ message, currentUserId, onReply, onDeleteMe, onDeleteAl
   </div>;
 }
 
+
+type ActionTarget = {
+  type: "conversation" | "contact";
+  id: number;
+  userId?: number;
+  name: string;
+  nickname?: string | null;
+  avatarUrl?: string | null;
+  isMuted?: boolean;
+  isBlocked?: boolean;
+};
+
+function ContactActionModal({
+  target,
+  onClose,
+  onDeleted,
+}: {
+  target: ActionTarget | null;
+  onClose: () => void;
+  onDeleted?: () => void;
+}) {
+  const utils = trpc.useUtils();
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [muteMenuOpen, setMuteMenuOpen] = useState(false);
+
+  const deleteConv = trpc.messaging.deleteConversation.useMutation({
+    onSuccess: () => {
+      utils.messaging.list.invalidate();
+      toast.success("Conversa excluída com sucesso.");
+      onClose();
+      onDeleted?.();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const deleteCont = trpc.profile.deleteContact.useMutation({
+    onSuccess: () => {
+      utils.profile.search.invalidate();
+      utils.messaging.list.invalidate();
+      toast.success("Contato removido com sucesso.");
+      onClose();
+      onDeleted?.();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const mute = trpc.messaging.muteConversation.useMutation({
+    onSuccess: () => {
+      utils.messaging.list.invalidate();
+      toast.success("Notificações silenciadas.");
+      onClose();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const unmute = trpc.messaging.unmuteConversation.useMutation({
+    onSuccess: () => {
+      utils.messaging.list.invalidate();
+      toast.success("Notificações reativadas.");
+      onClose();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const block = trpc.messaging.blockContact.useMutation({
+    onSuccess: () => {
+      utils.profile.search.invalidate();
+      utils.messaging.list.invalidate();
+      toast.success("Contato bloqueado.");
+      onClose();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  const unblock = trpc.messaging.unblockContact.useMutation({
+    onSuccess: () => {
+      utils.profile.search.invalidate();
+      utils.messaging.list.invalidate();
+      toast.success("Contato desbloqueado.");
+      onClose();
+    },
+    onError: err => toast.error(err.message),
+  });
+
+  if (!target) return null;
+
+  const targetUserId = target.type === "contact" ? target.id : target.userId;
+
+  const handleDelete = () => {
+    if (target.type === "conversation") {
+      deleteConv.mutate({ conversationId: target.id });
+    } else {
+      deleteCont.mutate({ contactId: target.id });
+    }
+  };
+
+  return (
+    <Dialog open={Boolean(target)} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="sm:max-w-sm bg-[var(--surface)] text-[var(--ink)] border border-[var(--line)] shadow-2xl rounded-3xl p-5">
+        <DialogHeader className="text-left space-y-1">
+          <div className="flex items-center gap-3 mb-1">
+            <Avatar name={target.name} url={target.avatarUrl} className="w-12 h-12 rounded-full" />
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="text-base font-bold text-[var(--ink)] truncate">
+                {target.name}
+              </DialogTitle>
+              {target.nickname && (
+                <span className="text-xs font-mono text-[#0080EA] bg-[#0080EA]/10 px-2 py-0.5 rounded-full inline-block mt-0.5">
+                  {target.nickname.startsWith("@") ? target.nickname : `@${target.nickname}`}
+                </span>
+              )}
+            </div>
+          </div>
+          <DialogDescription className="text-xs text-[var(--muted)]">
+            Opções do contato no estilo WhatsApp
+          </DialogDescription>
+        </DialogHeader>
+
+        {confirmDelete ? (
+          <div className="space-y-3 pt-2">
+            <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0" /> Confirmar exclusão
+              </p>
+              <p>Tem certeza de que deseja apagar {target.type === "conversation" ? "esta conversa" : "este contato"} da sua lista?</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setConfirmDelete(false)} className="flex-1 border-[var(--line)] text-xs font-medium">
+                Cancelar
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDelete}
+                disabled={deleteConv.isPending || deleteCont.isPending}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold"
+              >
+                {(deleteConv.isPending || deleteCont.isPending) ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <Trash2 className="w-3.5 h-3.5 mr-1" />}
+                Sim, Excluir
+              </Button>
+            </div>
+          </div>
+        ) : muteMenuOpen ? (
+          <div className="space-y-2 pt-2">
+            <p className="text-xs font-semibold text-[var(--ink)]">Silenciar notificações por:</p>
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs border-[var(--line)] hover:bg-[#0080EA]/10"
+                onClick={() => {
+                  if (target.type === "conversation") mute.mutate({ conversationId: target.id, durationHours: 8 });
+                }}
+              >
+                8 horas
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs border-[var(--line)] hover:bg-[#0080EA]/10"
+                onClick={() => {
+                  if (target.type === "conversation") mute.mutate({ conversationId: target.id, durationHours: 168 });
+                }}
+              >
+                1 semana
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs border-[var(--line)] hover:bg-[#0080EA]/10"
+                onClick={() => {
+                  if (target.type === "conversation") mute.mutate({ conversationId: target.id });
+                }}
+              >
+                Sempre
+              </Button>
+            </div>
+            <Button variant="ghost" size="sm" onClick={() => setMuteMenuOpen(false)} className="w-full text-xs text-[var(--muted)] mt-1">
+              Voltar
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1 pt-2">
+            {target.type === "conversation" && (
+              target.isMuted ? (
+                <button
+                  type="button"
+                  onClick={() => unmute.mutate({ conversationId: target.id })}
+                  className="flex items-center gap-3 p-3 rounded-2xl hover:bg-[var(--surface-soft)] text-left text-sm font-semibold text-[var(--ink)] transition-colors cursor-pointer"
+                >
+                  <Volume2 className="w-4 h-4 text-[#0080EA]" />
+                  <span>Reativar notificações de som</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setMuteMenuOpen(true)}
+                  className="flex items-center gap-3 p-3 rounded-2xl hover:bg-[var(--surface-soft)] text-left text-sm font-semibold text-[var(--ink)] transition-colors cursor-pointer"
+                >
+                  <BellOff className="w-4 h-4 text-amber-500" />
+                  <span>Silenciar notificações...</span>
+                </button>
+              )
+            )}
+
+            {targetUserId && (
+              target.isBlocked ? (
+                <button
+                  type="button"
+                  onClick={() => unblock.mutate({ contactId: targetUserId })}
+                  className="flex items-center gap-3 p-3 rounded-2xl hover:bg-[var(--surface-soft)] text-left text-sm font-semibold text-emerald-600 dark:text-emerald-400 transition-colors cursor-pointer"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Desbloquear contato</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => block.mutate({ contactId: targetUserId })}
+                  className="flex items-center gap-3 p-3 rounded-2xl hover:bg-[var(--surface-soft)] text-left text-sm font-semibold text-amber-600 dark:text-amber-400 transition-colors cursor-pointer"
+                >
+                  <Ban className="w-4 h-4" />
+                  <span>Bloquear contato</span>
+                </button>
+              )
+            )}
+
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="flex items-center gap-3 p-3 rounded-2xl hover:bg-red-500/10 text-left text-sm font-semibold text-red-600 dark:text-red-400 transition-colors cursor-pointer"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Excluir {target.type === "conversation" ? "conversa" : "contato"}</span>
+            </button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Home() {
   const { user, loading, isAuthenticated, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -903,6 +1145,25 @@ export default function Home() {
   const [downloadApkOpen, setDownloadApkOpen] = useState(false);
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const [contextTarget, setContextTarget] = useState<ActionTarget | null>(null);
+  const longPressTimer = useRef<any>(null);
+
+  const startLongPress = (target: ActionTarget) => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = setTimeout(() => {
+      if (typeof window !== "undefined" && window.navigator?.vibrate) {
+        try { window.navigator.vibrate(50); } catch (_) {}
+      }
+      setContextTarget(target);
+    }, 450);
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
   const selected = conversations.data?.find(conversation => conversation.id === selectedId) || null;
   const conversationReady = Boolean(selectedId && selected);
   const history = trpc.messaging.history.useQuery({ conversationId: selectedId || 0 }, { enabled: conversationReady, refetchInterval: 2_000 });
@@ -1183,7 +1444,8 @@ export default function Home() {
   </PopoverContent>
 </Popover><button aria-label="Anexar imagem ou documento" onClick={() => imageInput.current?.click()}><Paperclip /></button><input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} /><Textarea value={composer} onChange={event => typingChange(event.target.value)} placeholder="Escreva uma mensagem" onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} /><button aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }}><Mic /></button><Button size="icon" aria-label="Enviar mensagem" disabled={send.isPending || (!composer.trim() && !image)} onClick={() => submit()}>{send.isPending ? <Loader2 className="animate-spin" /> : <SendHorizonal />}</Button></div>}</div>
     </>}</main>
-    <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />
+    <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><ContactActionModal target={contextTarget} onClose={() => setContextTarget(null)} onDeleted={() => setSelectedId(null)} />
+    <GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />
     <CallDialog call={pendingCall.data && ["ringing", "connecting", "active"].includes(pendingCall.data.status) ? pendingCall.data as any : null} currentUserId={user?.id} onFinished={() => pendingCall.refetch()} />
     <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
     <DownloadApkModal open={downloadApkOpen} onOpenChange={setDownloadApkOpen} />

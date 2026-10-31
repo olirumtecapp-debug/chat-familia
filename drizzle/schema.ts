@@ -170,5 +170,48 @@ export const typingStates = mysqlTable(
   table => [primaryKey({ columns: [table.conversationId, table.userId] }), index("typing_expiry_idx").on(table.expiresAt)],
 );
 
+export const blockedUsers = mysqlTable(
+  "blocked_users",
+  {
+    userId: int("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    blockedUserId: int("blockedUserId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [primaryKey({ columns: [table.userId, table.blockedUserId] })],
+);
+
+export const mutedConversations = mysqlTable(
+  "muted_conversations",
+  {
+    userId: int("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    conversationId: int("conversationId")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    mutedUntil: timestamp("mutedUntil"),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [primaryKey({ columns: [table.userId, table.conversationId] })],
+);
+
+export const hiddenContacts = mysqlTable(
+  "hidden_contacts",
+  {
+    userId: int("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    targetUserId: int("targetUserId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("createdAt").defaultNow().notNull(),
+  },
+  table => [primaryKey({ columns: [table.userId, table.targetUserId] })],
+);
+
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;

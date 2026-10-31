@@ -1,6 +1,6 @@
 import { and, desc, eq, like, ne, or } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { users } from "../../drizzle/schema";
+import { blockedUsers, conversationMembers, conversations, hiddenContacts, users } from "../../drizzle/schema";
 import { requireDatabase } from "../db";
 import { storeMedia } from "../media";
 import { protectedProcedure, router } from "../_core/trpc";
@@ -90,6 +90,49 @@ export const profileRouter = router({
     return { success: true };
   }),
 
+  deleteContact: protectedProcedure
+    .input(z.object({ contactId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      // Hide contact for this user
+      await db.insert(hiddenContacts).values({
+        userId: ctx.user.id,
+        targetUserId: input.contactId,
+      }).onDuplicateKeyUpdate({ set: { createdAt: new Date() } });
+
+      // If there is a direct conversation, leave/delete it for this user
+      const directKey = [ctx.user.id, input.contactId].sort((a, b) => a - b).join(":");
+      const conv = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.directKey, directKey)).limit(1);
+      if (conv[0]) {
+        await db.delete(conversationMembers).where(
+          and(eq(conversationMembers.conversationId, conv[0].id), eq(conversationMembers.userId, ctx.user.id))
+        );
+      }
+
+      return { success: true };
+    }),
+
+  blockContact: protectedProcedure
+    .input(z.object({ contactId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      await db.insert(blockedUsers).values({
+        userId: ctx.user.id,
+        blockedUserId: input.contactId,
+      }).onDuplicateKeyUpdate({ set: { createdAt: new Date() } });
+      return { success: true };
+    }),
+
+  unblockContact: protectedProcedure
+    .input(z.object({ contactId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      await db.delete(blockedUsers).where(
+        and(eq(blockedUsers.userId, ctx.user.id), eq(blockedUsers.blockedUserId, input.contactId))
+      );
+      return { success: true };
+    }),
+
   search: protectedProcedure
     .input(z.object({ query: z.string().trim().max(120).optional().default("") }))
     .query(async ({ ctx, input }) => {
@@ -124,6 +167,25 @@ export const profileRouter = router({
         .where(whereClause)
         .orderBy(desc(users.lastSeen))
         .limit(50);
-      return results.map((user: any) => ({ ...user, online: isOnline(user.lastSeen) }));
+
+      const hidden = await db
+        .select({ targetUserId: hiddenContacts.targetUserId })
+        .from(hiddenContacts)
+        .where(eq(hiddenContacts.userId, ctx.user.id));
+      const hiddenIds = new Set(hidden.map(h => h.targetUserId));
+
+      const blocked = await db
+        .select({ blockedUserId: blockedUsers.blockedUserId })
+        .from(blockedUsers)
+        .where(eq(blockedUsers.userId, ctx.user.id));
+      const blockedIds = new Set(blocked.map(b => b.blockedUserId));
+
+      return results
+        .filter((user: any) => !hiddenIds.has(user.id))
+        .map((user: any) => ({
+          ...user,
+          online: isOnline(user.lastSeen),
+          isBlocked: blockedIds.has(user.id),
+        }));
     }),
 });

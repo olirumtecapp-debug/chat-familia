@@ -1,7 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import { and, desc, eq, gt, inArray, isNull, lt, ne, sql } from "drizzle-orm";
 import { z } from "zod";
-import { conversationMembers, conversations, messageDeletions, messages, messageStatuses, typingStates, users } from "../../drizzle/schema";
+import { blockedUsers, conversationMembers, conversations, messageDeletions, messages, messageStatuses, mutedConversations, typingStates, users } from "../../drizzle/schema";
 import { requireDatabase } from "../db";
 import { storeMedia } from "../media";
 import { publishRealtime } from "../realtime";
@@ -49,7 +49,30 @@ export const messagingRouter = router({
 
     const directKey = [ctx.user.id, input.userId].sort((a, b) => a - b).join(":");
     const existing = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.directKey, directKey)).limit(1);
-    if (existing[0]) return { conversationId: existing[0].id, created: false };
+    if (existing[0]) {
+      const convId = existing[0].id;
+      // Ensure both users are members (in case one previously deleted/left the conversation)
+      const members = await db
+        .select({ userId: conversationMembers.userId })
+        .from(conversationMembers)
+        .where(eq(conversationMembers.conversationId, convId));
+      const memberIds = new Set(members.map(m => m.userId));
+      const missing: Array<{ conversationId: number; userId: number; lastReadAt?: Date }> = [];
+      if (!memberIds.has(ctx.user.id)) {
+        missing.push({ conversationId: convId, userId: ctx.user.id, lastReadAt: new Date() });
+      }
+      if (!memberIds.has(input.userId)) {
+        missing.push({ conversationId: convId, userId: input.userId });
+      }
+      if (missing.length > 0) {
+        await db.insert(conversationMembers).values(missing);
+      }
+      // Also unhide if user had hidden this contact
+      await db.delete(hiddenContacts).where(
+        and(eq(hiddenContacts.userId, ctx.user.id), eq(hiddenContacts.targetUserId, input.userId))
+      );
+      return { conversationId: convId, created: false };
+    }
 
     try {
       const created = await db.insert(conversations).values({ type: "direct", directKey });
@@ -77,7 +100,7 @@ export const messagingRouter = router({
 
     return Promise.all(memberships.map(async conversation => {
       const partner = await db
-        .select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen })
+        .select({ id: users.id, name: users.name, nickname: users.nickname, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen })
         .from(conversationMembers)
         .innerJoin(users, eq(conversationMembers.userId, users.id))
         .where(and(eq(conversationMembers.conversationId, conversation.id), ne(users.id, ctx.user.id)))
@@ -98,14 +121,92 @@ export const messagingRouter = router({
           conversation.lastReadAt ? gt(messages.createdAt, conversation.lastReadAt) : sql`1 = 1`,
         ));
       const person = partner[0];
+
+      const muteRecord = await db
+        .select({ mutedUntil: mutedConversations.mutedUntil })
+        .from(mutedConversations)
+        .where(and(eq(mutedConversations.userId, ctx.user.id), eq(mutedConversations.conversationId, conversation.id)))
+        .limit(1);
+      const isMuted = Boolean(muteRecord[0] && (!muteRecord[0].mutedUntil || muteRecord[0].mutedUntil > new Date()));
+
+      const blockRecord = person ? await db
+        .select({ blockedUserId: blockedUsers.blockedUserId })
+        .from(blockedUsers)
+        .where(and(eq(blockedUsers.userId, ctx.user.id), eq(blockedUsers.blockedUserId, person.id)))
+        .limit(1) : [];
+      const isBlocked = Boolean(blockRecord[0]);
+
       return {
         ...conversation,
         participant: person ? { ...person, online: online(person.lastSeen) } : null,
         latestMessage: latest[0] ?? null,
         unreadCount: Number(unread[0]?.count ?? 0),
+        isMuted,
+        isBlocked,
       };
     }));
   }),
+
+  deleteConversation: protectedProcedure
+    .input(z.object({ conversationId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await assertMember(input.conversationId, ctx.user.id);
+      await db.delete(conversationMembers).where(
+        and(eq(conversationMembers.conversationId, input.conversationId), eq(conversationMembers.userId, ctx.user.id))
+      );
+      const remaining = await db
+        .select({ userId: conversationMembers.userId })
+        .from(conversationMembers)
+        .where(eq(conversationMembers.conversationId, input.conversationId));
+      if (!remaining.length) {
+        await db.delete(conversations).where(eq(conversations.id, input.conversationId));
+      }
+      return { success: true };
+    }),
+
+  muteConversation: protectedProcedure
+    .input(z.object({ conversationId: z.number().int().positive(), durationHours: z.number().optional() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await assertMember(input.conversationId, ctx.user.id);
+      const mutedUntil = input.durationHours ? new Date(Date.now() + input.durationHours * 3600 * 1000) : null;
+      await db.insert(mutedConversations).values({
+        userId: ctx.user.id,
+        conversationId: input.conversationId,
+        mutedUntil,
+      }).onDuplicateKeyUpdate({ set: { mutedUntil } });
+      return { success: true, mutedUntil };
+    }),
+
+  unmuteConversation: protectedProcedure
+    .input(z.object({ conversationId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await assertMember(input.conversationId, ctx.user.id);
+      await db.delete(mutedConversations).where(
+        and(eq(mutedConversations.conversationId, input.conversationId), eq(mutedConversations.userId, ctx.user.id))
+      );
+      return { success: true };
+    }),
+
+  blockContact: protectedProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      await db.insert(blockedUsers).values({
+        userId: ctx.user.id,
+        blockedUserId: input.userId,
+      }).onDuplicateKeyUpdate({ set: { createdAt: new Date() } });
+      return { success: true };
+    }),
+
+  unblockContact: protectedProcedure
+    .input(z.object({ userId: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const db = await requireDatabase();
+      await db.delete(blockedUsers).where(
+        and(eq(blockedUsers.userId, ctx.user.id), eq(blockedUsers.blockedUserId, input.userId))
+      );
+      return { success: true };
+    }),
 
   history: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
     const db = await assertMember(input.conversationId, ctx.user.id);

@@ -159,6 +159,34 @@ var typingStates = mysqlTable(
   },
   (table) => [primaryKey({ columns: [table.conversationId, table.userId] }), index("typing_expiry_idx").on(table.expiresAt)]
 );
+var blockedUsers = mysqlTable(
+  "blocked_users",
+  {
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    blockedUserId: int("blockedUserId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("createdAt").defaultNow().notNull()
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.blockedUserId] })]
+);
+var mutedConversations = mysqlTable(
+  "muted_conversations",
+  {
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    conversationId: int("conversationId").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    mutedUntil: timestamp("mutedUntil"),
+    createdAt: timestamp("createdAt").defaultNow().notNull()
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.conversationId] })]
+);
+var hiddenContacts2 = mysqlTable(
+  "hidden_contacts",
+  {
+    userId: int("userId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    targetUserId: int("targetUserId").notNull().references(() => users.id, { onDelete: "cascade" }),
+    createdAt: timestamp("createdAt").defaultNow().notNull()
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.targetUserId] })]
+);
 
 // server/_core/env.ts
 var ENV = {
@@ -238,7 +266,10 @@ function getInitialStore() {
     messageDeletions: [],
     calls: [],
     callSignals: [],
-    typingStates: []
+    typingStates: [],
+    blockedUsers: [],
+    mutedConversations: [],
+    hiddenContacts: []
   };
 }
 var store = loadStore();
@@ -251,6 +282,12 @@ function loadStore() {
       if (data && Array.isArray(data.conversations)) {
         data.conversations = data.conversations.filter((c) => c.title !== "Fam\xEDlia Silva \u2764\uFE0F");
       }
+      if (data && Array.isArray(data.users)) {
+        data.users = data.users.filter((u) => u.email !== "carlos.familia@teste.com" && u.name !== "Tio Carlos");
+      }
+      data.blockedUsers = data.blockedUsers || [];
+      data.mutedConversations = data.mutedConversations || [];
+      data.hiddenContacts = data.hiddenContacts || [];
       return data;
     }
   } catch (e) {
@@ -274,6 +311,9 @@ function reviveDates(obj) {
   return out;
 }
 function persistStore() {
+  if (process.env.VITEST) {
+    return;
+  }
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -295,6 +335,9 @@ function getTableName(table) {
   if (name === "calls") return "calls";
   if (name === "call_signals" || name === "callSignals") return "callSignals";
   if (name === "typing_states" || name === "typingStates") return "typingStates";
+  if (name === "blocked_users" || name === "blockedUsers") return "blockedUsers";
+  if (name === "muted_conversations" || name === "mutedConversations") return "mutedConversations";
+  if (name === "hidden_contacts" || name === "hiddenContacts") return "hiddenContacts";
   return "users";
 }
 function extractCondition(cond) {
@@ -1563,7 +1606,25 @@ var messagingRouter = router({
     if (!other[0]) throw new TRPCError5({ code: "NOT_FOUND", message: "Pessoa n\xE3o encontrada." });
     const directKey = [ctx.user.id, input.userId].sort((a, b) => a - b).join(":");
     const existing = await db.select({ id: conversations.id }).from(conversations).where(eq4(conversations.directKey, directKey)).limit(1);
-    if (existing[0]) return { conversationId: existing[0].id, created: false };
+    if (existing[0]) {
+      const convId = existing[0].id;
+      const members = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(eq4(conversationMembers.conversationId, convId));
+      const memberIds = new Set(members.map((m) => m.userId));
+      const missing = [];
+      if (!memberIds.has(ctx.user.id)) {
+        missing.push({ conversationId: convId, userId: ctx.user.id, lastReadAt: /* @__PURE__ */ new Date() });
+      }
+      if (!memberIds.has(input.userId)) {
+        missing.push({ conversationId: convId, userId: input.userId });
+      }
+      if (missing.length > 0) {
+        await db.insert(conversationMembers).values(missing);
+      }
+      await db.delete(hiddenContacts).where(
+        and3(eq4(hiddenContacts.userId, ctx.user.id), eq4(hiddenContacts.targetUserId, input.userId))
+      );
+      return { conversationId: convId, created: false };
+    }
     try {
       const created = await db.insert(conversations).values({ type: "direct", directKey });
       const conversationId = Number(created[0].insertId);
@@ -1582,7 +1643,7 @@ var messagingRouter = router({
     const db = await requireDatabase();
     const memberships = await db.select({ id: conversations.id, type: conversations.type, title: conversations.title, updatedAt: conversations.updatedAt, lastReadAt: conversationMembers.lastReadAt }).from(conversationMembers).innerJoin(conversations, eq4(conversationMembers.conversationId, conversations.id)).where(eq4(conversationMembers.userId, ctx.user.id)).orderBy(desc2(conversations.updatedAt));
     return Promise.all(memberships.map(async (conversation) => {
-      const partner = await db.select({ id: users.id, name: users.name, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(conversationMembers).innerJoin(users, eq4(conversationMembers.userId, users.id)).where(and3(eq4(conversationMembers.conversationId, conversation.id), ne3(users.id, ctx.user.id))).limit(1);
+      const partner = await db.select({ id: users.id, name: users.name, nickname: users.nickname, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(conversationMembers).innerJoin(users, eq4(conversationMembers.userId, users.id)).where(and3(eq4(conversationMembers.conversationId, conversation.id), ne3(users.id, ctx.user.id))).limit(1);
       const latest = await db.select({ id: messages.id, content: messages.content, messageType: messages.messageType, createdAt: messages.createdAt, senderId: messages.senderId, deletedAt: messages.deletedAt }).from(messages).where(eq4(messages.conversationId, conversation.id)).orderBy(desc2(messages.createdAt)).limit(1);
       const unread = await db.select({ count: sql`count(*)` }).from(messages).where(and3(
         eq4(messages.conversationId, conversation.id),
@@ -1591,13 +1652,62 @@ var messagingRouter = router({
         conversation.lastReadAt ? gt2(messages.createdAt, conversation.lastReadAt) : sql`1 = 1`
       ));
       const person = partner[0];
+      const muteRecord = await db.select({ mutedUntil: mutedConversations.mutedUntil }).from(mutedConversations).where(and3(eq4(mutedConversations.userId, ctx.user.id), eq4(mutedConversations.conversationId, conversation.id))).limit(1);
+      const isMuted = Boolean(muteRecord[0] && (!muteRecord[0].mutedUntil || muteRecord[0].mutedUntil > /* @__PURE__ */ new Date()));
+      const blockRecord = person ? await db.select({ blockedUserId: blockedUsers.blockedUserId }).from(blockedUsers).where(and3(eq4(blockedUsers.userId, ctx.user.id), eq4(blockedUsers.blockedUserId, person.id))).limit(1) : [];
+      const isBlocked = Boolean(blockRecord[0]);
       return {
         ...conversation,
         participant: person ? { ...person, online: online(person.lastSeen) } : null,
         latestMessage: latest[0] ?? null,
-        unreadCount: Number(unread[0]?.count ?? 0)
+        unreadCount: Number(unread[0]?.count ?? 0),
+        isMuted,
+        isBlocked
       };
     }));
+  }),
+  deleteConversation: protectedProcedure.input(z4.object({ conversationId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await assertMember(input.conversationId, ctx.user.id);
+    await db.delete(conversationMembers).where(
+      and3(eq4(conversationMembers.conversationId, input.conversationId), eq4(conversationMembers.userId, ctx.user.id))
+    );
+    const remaining = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(eq4(conversationMembers.conversationId, input.conversationId));
+    if (!remaining.length) {
+      await db.delete(conversations).where(eq4(conversations.id, input.conversationId));
+    }
+    return { success: true };
+  }),
+  muteConversation: protectedProcedure.input(z4.object({ conversationId: z4.number().int().positive(), durationHours: z4.number().optional() })).mutation(async ({ ctx, input }) => {
+    const db = await assertMember(input.conversationId, ctx.user.id);
+    const mutedUntil = input.durationHours ? new Date(Date.now() + input.durationHours * 3600 * 1e3) : null;
+    await db.insert(mutedConversations).values({
+      userId: ctx.user.id,
+      conversationId: input.conversationId,
+      mutedUntil
+    }).onDuplicateKeyUpdate({ set: { mutedUntil } });
+    return { success: true, mutedUntil };
+  }),
+  unmuteConversation: protectedProcedure.input(z4.object({ conversationId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await assertMember(input.conversationId, ctx.user.id);
+    await db.delete(mutedConversations).where(
+      and3(eq4(mutedConversations.conversationId, input.conversationId), eq4(mutedConversations.userId, ctx.user.id))
+    );
+    return { success: true };
+  }),
+  blockContact: protectedProcedure.input(z4.object({ userId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    await db.insert(blockedUsers).values({
+      userId: ctx.user.id,
+      blockedUserId: input.userId
+    }).onDuplicateKeyUpdate({ set: { createdAt: /* @__PURE__ */ new Date() } });
+    return { success: true };
+  }),
+  unblockContact: protectedProcedure.input(z4.object({ userId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    await db.delete(blockedUsers).where(
+      and3(eq4(blockedUsers.userId, ctx.user.id), eq4(blockedUsers.blockedUserId, input.userId))
+    );
+    return { success: true };
   }),
   history: protectedProcedure.input(pageInput).query(async ({ ctx, input }) => {
     const db = await assertMember(input.conversationId, ctx.user.id);
@@ -1780,6 +1890,36 @@ var profileRouter = router({
     await db.update(users).set({ lastSeen: /* @__PURE__ */ new Date() }).where(eq5(users.id, ctx.user.id));
     return { success: true };
   }),
+  deleteContact: protectedProcedure.input(z5.object({ contactId: z5.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    await db.insert(hiddenContacts2).values({
+      userId: ctx.user.id,
+      targetUserId: input.contactId
+    }).onDuplicateKeyUpdate({ set: { createdAt: /* @__PURE__ */ new Date() } });
+    const directKey = [ctx.user.id, input.contactId].sort((a, b) => a - b).join(":");
+    const conv = await db.select({ id: conversations.id }).from(conversations).where(eq5(conversations.directKey, directKey)).limit(1);
+    if (conv[0]) {
+      await db.delete(conversationMembers).where(
+        and4(eq5(conversationMembers.conversationId, conv[0].id), eq5(conversationMembers.userId, ctx.user.id))
+      );
+    }
+    return { success: true };
+  }),
+  blockContact: protectedProcedure.input(z5.object({ contactId: z5.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    await db.insert(blockedUsers).values({
+      userId: ctx.user.id,
+      blockedUserId: input.contactId
+    }).onDuplicateKeyUpdate({ set: { createdAt: /* @__PURE__ */ new Date() } });
+    return { success: true };
+  }),
+  unblockContact: protectedProcedure.input(z5.object({ contactId: z5.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const db = await requireDatabase();
+    await db.delete(blockedUsers).where(
+      and4(eq5(blockedUsers.userId, ctx.user.id), eq5(blockedUsers.blockedUserId, input.contactId))
+    );
+    return { success: true };
+  }),
   search: protectedProcedure.input(z5.object({ query: z5.string().trim().max(120).optional().default("") })).query(async ({ ctx, input }) => {
     const db = await requireDatabase();
     const rawQuery = (input.query || "").trim();
@@ -1807,7 +1947,15 @@ var profileRouter = router({
       status: users.status,
       lastSeen: users.lastSeen
     }).from(users).where(whereClause).orderBy(desc3(users.lastSeen)).limit(50);
-    return results.map((user) => ({ ...user, online: isOnline(user.lastSeen) }));
+    const hidden = await db.select({ targetUserId: hiddenContacts2.targetUserId }).from(hiddenContacts2).where(eq5(hiddenContacts2.userId, ctx.user.id));
+    const hiddenIds = new Set(hidden.map((h) => h.targetUserId));
+    const blocked = await db.select({ blockedUserId: blockedUsers.blockedUserId }).from(blockedUsers).where(eq5(blockedUsers.userId, ctx.user.id));
+    const blockedIds = new Set(blocked.map((b) => b.blockedUserId));
+    return results.filter((user) => !hiddenIds.has(user.id)).map((user) => ({
+      ...user,
+      online: isOnline(user.lastSeen),
+      isBlocked: blockedIds.has(user.id)
+    }));
   })
 });
 
