@@ -1,5 +1,5 @@
 // Service Worker for ChatForAll PWA
-const CACHE_NAME = 'chatforall-cache-v3';
+const CACHE_NAME = 'chatforall-cache-v4';
 const ASSETS_TO_CACHE = [
   '/manifest.webmanifest',
   '/icon-192.png',
@@ -11,9 +11,7 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE).catch(() => {
-        // Silently continue if some assets fail in dev
-      });
+      return cache.addAll(ASSETS_TO_CACHE).catch(() => {});
     })
   );
   self.skipWaiting();
@@ -33,14 +31,19 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Pass network-first or pass-through for API calls
   if (event.request.url.includes('/api/') || event.request.method !== 'GET') {
     return;
   }
 
+  // Network first for HTML navigation so updates are instant
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('/'))
+    );
+    return;
+  }
+
   event.respondWith(
-    fetch(event.request).catch(() => {
-      return caches.match(event.request);
-    })
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });

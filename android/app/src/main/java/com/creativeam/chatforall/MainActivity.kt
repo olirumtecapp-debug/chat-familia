@@ -73,6 +73,8 @@ class MainActivity : AppCompatActivity() {
         setupSwipeRefresh()
         setupBackNavigation()
 
+        webView.clearCache(true)
+
         val intentUrl = intent?.data?.toString()
         val targetUrl = if (!intentUrl.isNullOrEmpty() && (intentUrl.startsWith(APP_URL) || intentUrl.startsWith("https://chat-familia.vercel.app"))) {
             intentUrl
@@ -109,7 +111,7 @@ class MainActivity : AppCompatActivity() {
         settings.databaseEnabled = true
         settings.allowFileAccess = true
         settings.mediaPlaybackRequiresUserGesture = false
-        settings.cacheMode = WebSettings.LOAD_DEFAULT
+        settings.cacheMode = WebSettings.LOAD_NO_CACHE
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
         settings.setSupportZoom(false)
@@ -205,6 +207,7 @@ class MainActivity : AppCompatActivity() {
     private fun setupSwipeRefresh() {
         swipeRefresh.setColorSchemeColors(ContextCompat.getColor(this, R.color.primary))
         swipeRefresh.setOnRefreshListener {
+            webView.clearCache(true)
             webView.reload()
         }
     }
