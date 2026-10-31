@@ -8,8 +8,8 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 var COOKIE_NAME = "app_session_id";
 var ONE_YEAR_MS = 1e3 * 60 * 60 * 24 * 365;
 var AXIOS_TIMEOUT_MS = 3e4;
-var UNAUTHED_ERR_MSG = "Please login (10001)";
-var NOT_ADMIN_ERR_MSG = "You do not have required permission (10002)";
+var UNAUTHED_ERR_MSG = "Sess\xE3o expirada. Por favor, fa\xE7a login novamente.";
+var NOT_ADMIN_ERR_MSG = "Voc\xEA n\xE3o possui permiss\xE3o de administrador.";
 var OAUTH_STATE_COOKIE = "__Host-oauth_state";
 var decodeOAuthState = (state) => {
   let decoded;
@@ -273,8 +273,65 @@ function getInitialStore() {
         lastSignedIn: now
       }
     ],
-    conversations: [],
-    conversationMembers: [],
+    conversations: [
+      {
+        id: 1,
+        type: "direct",
+        directKey: "1:4",
+        title: null,
+        groupOwnerId: null,
+        createdAt: now,
+        updatedAt: now
+      },
+      {
+        id: 2,
+        type: "direct",
+        directKey: "1:3",
+        title: null,
+        groupOwnerId: null,
+        createdAt: now,
+        updatedAt: now
+      },
+      {
+        id: 3,
+        type: "direct",
+        directKey: "3:4",
+        title: null,
+        groupOwnerId: null,
+        createdAt: now,
+        updatedAt: now
+      },
+      {
+        id: 4,
+        type: "direct",
+        directKey: "1:1",
+        title: "Anota\xE7\xF5es Pessoais (Voc\xEA)",
+        groupOwnerId: null,
+        createdAt: now,
+        updatedAt: now
+      },
+      {
+        id: 5,
+        type: "group",
+        directKey: null,
+        title: "Fam\xEDlia Silva \u2764\uFE0F",
+        groupOwnerId: 1,
+        createdAt: now,
+        updatedAt: now
+      }
+    ],
+    conversationMembers: [
+      { conversationId: 1, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 1, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 2, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 2, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 3, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 3, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 4, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 5, userId: 1, memberRole: "admin", joinedAt: now, lastReadAt: now },
+      { conversationId: 5, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 5, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now }
+    ],
     messages: [],
     messageStatuses: [],
     messageDeletions: [],
@@ -290,15 +347,44 @@ function getInitialStore() {
 var store = loadStore();
 function loadStore() {
   try {
-    if (fs.existsSync(STORE_FILE)) {
-      const raw = fs.readFileSync(STORE_FILE, "utf-8");
+    const candidateFiles = [
+      STORE_FILE,
+      path.resolve(process.cwd(), "server", "data", "chat-store.json"),
+      path.resolve(process.cwd(), "dist", "server", "data", "chat-store.json")
+    ];
+    let foundFile = null;
+    for (const f of candidateFiles) {
+      if (fs.existsSync(f)) {
+        foundFile = f;
+        break;
+      }
+    }
+    if (foundFile) {
+      const raw = fs.readFileSync(foundFile, "utf-8");
       const parsed = JSON.parse(raw);
       const data = reviveDates(parsed);
-      if (data && Array.isArray(data.conversations)) {
-        data.conversations = data.conversations.filter((c) => c.title !== "Fam\xEDlia Silva \u2764\uFE0F");
-      }
       if (data && Array.isArray(data.users)) {
-        data.users = data.users.filter((u) => u.email !== "carlos.familia@teste.com" && u.name !== "Tio Carlos");
+        const userMap = /* @__PURE__ */ new Map();
+        for (const u of data.users) {
+          const key = (u.nickname || u.email || String(u.id)).toLowerCase();
+          if (!userMap.has(key)) {
+            userMap.set(key, u);
+          }
+        }
+        const initial = getInitialStore();
+        for (const u of initial.users) {
+          const key = (u.nickname || u.email || String(u.id)).toLowerCase();
+          if (!userMap.has(key)) {
+            userMap.set(key, u);
+          }
+        }
+        data.users = Array.from(userMap.values());
+      } else {
+        data.users = getInitialStore().users;
+      }
+      if (!Array.isArray(data.conversations) || data.conversations.length === 0) {
+        data.conversations = getInitialStore().conversations;
+        data.conversationMembers = getInitialStore().conversationMembers;
       }
       data.blockedUsers = data.blockedUsers || [];
       data.mutedConversations = data.mutedConversations || [];
@@ -364,8 +450,14 @@ function extractCondition(cond) {
   if (chunks.length === 3 && chunks[0]?.value?.[0] === "(" && chunks[2]?.value?.[0] === ")") {
     return extractCondition(chunks[1]);
   }
-  const isAnd = chunks.some((c) => typeof c?.value?.[0] === "string" && c.value[0].includes(" and "));
-  const isOr = chunks.some((c) => typeof c?.value?.[0] === "string" && c.value[0].includes(" or "));
+  const isAnd = chunks.some((c) => {
+    const raw = typeof c?.value === "string" ? c.value : Array.isArray(c?.value) ? c.value.join(" ") : typeof c === "string" ? c : "";
+    return typeof raw === "string" && /\band\b/i.test(raw);
+  });
+  const isOr = chunks.some((c) => {
+    const raw = typeof c?.value === "string" ? c.value : Array.isArray(c?.value) ? c.value.join(" ") : typeof c === "string" ? c : "";
+    return typeof raw === "string" && /\bor\b/i.test(raw);
+  });
   if (isAnd) {
     const subConds = chunks.filter((c) => c && c.queryChunks);
     return { type: "and", conditions: subConds.map(extractCondition).filter(Boolean) };
@@ -374,6 +466,8 @@ function extractCondition(cond) {
     const subConds = chunks.filter((c) => c && c.queryChunks);
     return { type: "or", conditions: subConds.map(extractCondition).filter(Boolean) };
   }
+  let leftCol = null;
+  let rightCol = null;
   let colName = null;
   let op = "=";
   let targetVal = void 0;
@@ -384,8 +478,14 @@ function extractCondition(cond) {
       if (sub && sub.colName) return sub;
       if (sub && (sub.type === "and" || sub.type === "or")) return sub;
     }
-    if (chunk && chunk.name && typeof chunk.table !== "undefined") {
-      colName = chunk.name;
+    if (chunk && (chunk.name || chunk.key) && typeof chunk.table !== "undefined") {
+      const col = chunk.key || chunk.name;
+      if (!leftCol) {
+        leftCol = col;
+        colName = col;
+      } else {
+        rightCol = col;
+      }
     } else if (chunk && chunk.value && Array.isArray(chunk.value)) {
       const v = chunk.value[0];
       if (typeof v === "string") {
@@ -410,7 +510,22 @@ function extractCondition(cond) {
       }
     }
   }
-  return { type: "single", colName, op, targetVal };
+  return { type: "single", colName, leftCol, rightCol, op, targetVal };
+}
+function toCamelCase(str) {
+  return str.replace(/_([a-z0-9])/g, (_, letter) => letter.toUpperCase());
+}
+function toSnakeCase(str) {
+  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+}
+function getItemValue(item, colName) {
+  if (!item || !colName) return void 0;
+  if (item[colName] !== void 0) return item[colName];
+  const camel = toCamelCase(colName);
+  if (item[camel] !== void 0) return item[camel];
+  const snake = toSnakeCase(colName);
+  if (item[snake] !== void 0) return item[snake];
+  return void 0;
 }
 function evaluateParsed(item, parsed) {
   if (!parsed) return true;
@@ -423,7 +538,7 @@ function evaluateParsed(item, parsed) {
   if (parsed.type === "single") {
     const { colName, op, targetVal } = parsed;
     if (!colName) return true;
-    const val = item[colName];
+    const val = getItemValue(item, colName);
     switch (op) {
       case "=":
         if (targetVal instanceof Date && val instanceof Date) return val.getTime() === targetVal.getTime();
@@ -514,10 +629,19 @@ function getMockDb() {
                   const jTableRows = store[jTableName] || [];
                   const jCond = extractCondition(j.on);
                   const match = jTableRows.find((jRow) => {
-                    if (jCond && jCond.colName) {
-                      return jRow.id === row[jCond.colName] || jRow[jCond.colName] === row.id || jRow.id === row.userId || jRow.userId === row.id || jRow.messageId === row.id;
+                    if (jCond) {
+                      const lCol = jCond.leftCol || jCond.colName;
+                      const rCol = jCond.rightCol || "id";
+                      const v1 = getItemValue(row, lCol);
+                      const v2 = getItemValue(jRow, rCol);
+                      if (v1 !== void 0 && v2 !== void 0 && v1 === v2) return true;
+                      const rev1 = getItemValue(row, rCol);
+                      const rev2 = getItemValue(jRow, lCol);
+                      if (rev1 !== void 0 && rev2 !== void 0 && rev1 === rev2) return true;
+                      if (v1 !== void 0 && jRow.id === v1) return true;
+                      if (rev1 !== void 0 && jRow.id === rev1) return true;
                     }
-                    return true;
+                    return false;
                   });
                   if (!match) {
                     if (!j.isLeft) {
@@ -552,7 +676,7 @@ function getMockDb() {
                 for (const k of fieldKeys) {
                   const colSpec = fields[k];
                   const colName = colSpec?.name || k;
-                  res[k] = item[colName] !== void 0 ? item[colName] : item[k];
+                  res[k] = getItemValue(item, colName) !== void 0 ? getItemValue(item, colName) : getItemValue(item, k);
                 }
                 return res;
               });
@@ -582,6 +706,7 @@ function getMockDb() {
               const existingIdx = tableItems.findIndex((existing) => {
                 if (item.openId && existing.openId === item.openId) return true;
                 if (item.email && existing.email && item.email.toLowerCase() === existing.email.toLowerCase()) return true;
+                if (tableName === "users" && item.nickname && existing.nickname && item.nickname.toLowerCase() === existing.nickname.toLowerCase()) return true;
                 if (item.directKey && existing.directKey === item.directKey) return true;
                 if (item.conversationId && item.userId && existing.conversationId === item.conversationId && existing.userId === item.userId) return true;
                 if (item.id && existing.id === item.id) return true;
@@ -589,7 +714,9 @@ function getMockDb() {
               });
               if (existingIdx >= 0) {
                 if (updateSet && typeof updateSet === "object") {
-                  Object.assign(tableItems[existingIdx], updateSet);
+                  Object.assign(tableItems[existingIdx], item, updateSet);
+                } else {
+                  Object.assign(tableItems[existingIdx], item);
                 }
                 lastInsertId = tableItems[existingIdx].id || 0;
               } else {
@@ -760,27 +887,69 @@ async function upsertUser(user) {
 async function upsertLocalUser(input) {
   const email = input.email.trim().toLowerCase();
   const name = input.name.trim();
+  let nickname = input.nickname?.trim();
+  if (nickname && !nickname.startsWith("@")) {
+    nickname = `@${nickname.toLowerCase()}`;
+  } else if (nickname) {
+    nickname = nickname.toLowerCase();
+  }
+  let canonicalOpenId = null;
+  let canonicalId = null;
+  if (email === "olirumtecapp@gmail.com" || nickname === "@olirumpai") {
+    canonicalOpenId = "murilo_silva_pai";
+    canonicalId = 1;
+    nickname = "@olirumpai";
+  } else if (email === "esposa@gmail.com" || nickname === "@esposasilva") {
+    canonicalOpenId = "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a";
+    canonicalId = 3;
+    nickname = "@esposasilva";
+  } else if (email === "filho@gmail.com" || nickname === "@olirumfilho") {
+    canonicalOpenId = "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b";
+    canonicalId = 4;
+    nickname = "@olirumfilho";
+  }
+  const now = /* @__PURE__ */ new Date();
+  const db = await getDb();
   try {
-    const existing = await getUserByEmail(email);
-    const db = await getDb();
+    let existing = null;
+    if (canonicalOpenId) {
+      existing = await getUserByOpenId(canonicalOpenId);
+    }
+    if (!existing) {
+      existing = await getUserByEmail(email);
+    }
     if (existing) {
-      await db.update(users).set({ name, ...input.nickname ? { nickname: input.nickname } : {}, lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date(), loginMethod: "commercial-auth" }).where(eq(users.id, existing.id));
-      const refreshed = await getUserByEmail(email);
+      await db.update(users).set({
+        name,
+        email,
+        ...nickname ? { nickname } : {},
+        lastSignedIn: now,
+        lastSeen: now,
+        loginMethod: "commercial-auth"
+      }).where(eq(users.id, existing.id));
+      const refreshed = await getUserByOpenId(existing.openId);
       return refreshed || existing;
     }
-    const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
-    const now = /* @__PURE__ */ new Date();
-    await db.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: now, lastSeen: now }).onDuplicateKeyUpdate({ set: { name, ...input.nickname ? { nickname: input.nickname } : {}, lastSignedIn: now, lastSeen: now, loginMethod: "commercial-auth" } });
-    try {
-      const createdUser = await getUserByOpenId(openId);
-      if (createdUser) {
-        const groups = await db.select().from(conversations).where(eq(conversations.type, "group")).limit(1);
-        if (groups[0]) {
-          await db.insert(conversationMembers).values({ conversationId: groups[0].id, userId: createdUser.id, memberRole: "member", joinedAt: now }).onDuplicateKeyUpdate({ set: { joinedAt: now } });
-        }
+    const openId = canonicalOpenId || `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    await db.insert(users).values({
+      ...canonicalId ? { id: canonicalId } : {},
+      openId,
+      name,
+      nickname: nickname || null,
+      email,
+      loginMethod: "commercial-auth",
+      lastSignedIn: now,
+      lastSeen: now
+    }).onDuplicateKeyUpdate({
+      set: {
+        name,
+        email,
+        ...nickname ? { nickname } : {},
+        lastSignedIn: now,
+        lastSeen: now,
+        loginMethod: "commercial-auth"
       }
-    } catch (_) {
-    }
+    });
     const user = await getUserByOpenId(openId);
     if (!user) throw new Error("Local user could not be created");
     return user;
@@ -788,13 +957,36 @@ async function upsertLocalUser(input) {
     console.warn("[Database] upsertLocalUser failed, falling back to mockDb:", err?.message || err);
     useMockFallback = true;
     const mock = getMockDb();
-    const existing = await mock.select().from(users).where(eq(users.email, email)).limit(1);
-    if (existing[0]) {
-      await mock.update(users).set({ name, ...input.nickname ? { nickname: input.nickname } : {}, lastSignedIn: /* @__PURE__ */ new Date() }).where(eq(users.id, existing[0].id));
-      return { ...existing[0], name, ...input.nickname ? { nickname: input.nickname } : {} };
+    let existing = null;
+    if (canonicalOpenId) {
+      const res = await mock.select().from(users).where(eq(users.openId, canonicalOpenId)).limit(1);
+      existing = res[0];
     }
-    const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
-    await mock.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: /* @__PURE__ */ new Date(), lastSeen: /* @__PURE__ */ new Date() });
+    if (!existing) {
+      const res = await mock.select().from(users).where(eq(users.email, email)).limit(1);
+      existing = res[0];
+    }
+    if (existing) {
+      await mock.update(users).set({
+        name,
+        email,
+        ...nickname ? { nickname } : {},
+        lastSignedIn: now,
+        lastSeen: now
+      }).where(eq(users.id, existing.id));
+      return { ...existing, name, email, ...nickname ? { nickname } : {}, lastSignedIn: now, lastSeen: now };
+    }
+    const openId = canonicalOpenId || `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    await mock.insert(users).values({
+      ...canonicalId ? { id: canonicalId } : {},
+      openId,
+      name,
+      nickname: nickname || null,
+      email,
+      loginMethod: "commercial-auth",
+      lastSignedIn: now,
+      lastSeen: now
+    });
     const user = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
     return user[0];
   }
@@ -1031,6 +1223,24 @@ var SDKServer = class {
     const sessionUserId = session.openId;
     const signedInAt = /* @__PURE__ */ new Date();
     let user = await getUserByOpenId(sessionUserId);
+    if (!user && (session.openId.startsWith("local_") || session.openId === "murilo_silva_pai")) {
+      const isMurilo = session.openId === "murilo_silva_pai";
+      const isEsposa = session.openId === "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a";
+      const isFilho = session.openId === "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b";
+      const email = isMurilo ? "olirumtecapp@gmail.com" : isEsposa ? "esposa@gmail.com" : isFilho ? "filho@gmail.com" : null;
+      const nickname = isMurilo ? "@olirumpai" : isEsposa ? "@esposasilva" : isFilho ? "@olirumfilho" : null;
+      const id = isMurilo ? 1 : isEsposa ? 3 : isFilho ? 4 : void 0;
+      await upsertUser({
+        ...id ? { id } : {},
+        openId: session.openId,
+        name: session.name || (isMurilo ? "Murilo Silva" : isEsposa ? "Esposa Silva" : isFilho ? "Filho Silva" : "Usu\xE1rio"),
+        email,
+        nickname,
+        loginMethod: "commercial-auth",
+        lastSignedIn: signedInAt
+      });
+      user = await getUserByOpenId(sessionUserId);
+    }
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
@@ -1678,8 +1888,9 @@ async function recipientIds(conversationId, userId) {
         }
         return [otherId];
       }
+      return [userId];
     }
-    throw new TRPCError5({ code: "BAD_REQUEST", message: "A conversa precisa ter outro participante." });
+    return [userId];
   }
   return rows.map((row) => row.userId);
 }
@@ -1688,7 +1899,9 @@ function online(lastSeen) {
 }
 var messagingRouter = router({
   createDirect: protectedProcedure.input(z4.object({ userId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
-    if (input.userId === ctx.user.id) throw new TRPCError5({ code: "BAD_REQUEST", message: "Escolha outra pessoa para conversar." });
+    if (input.userId === ctx.user.id) {
+      throw new TRPCError5({ code: "BAD_REQUEST", message: "Para suas pr\xF3prias anota\xE7\xF5es, use a conversa 'Anota\xE7\xF5es Pessoais'." });
+    }
     const db = await requireDatabase();
     const other = await db.select({ id: users.id }).from(users).where(eq4(users.id, input.userId)).limit(1);
     if (!other[0]) throw new TRPCError5({ code: "NOT_FOUND", message: "Pessoa n\xE3o encontrada." });
@@ -1720,7 +1933,10 @@ var messagingRouter = router({
       return { conversationId: convId, created: false };
     }
     try {
-      const created = await db.insert(conversations).values({ type: "direct", directKey });
+      const created = await db.insert(conversations).values({
+        type: "direct",
+        directKey
+      });
       const conversationId = Number(created[0].insertId);
       await db.insert(conversationMembers).values([
         { conversationId, userId: ctx.user.id, lastReadAt: /* @__PURE__ */ new Date() },
@@ -1745,7 +1961,16 @@ var messagingRouter = router({
         isNull(messages.deletedAt),
         conversation.lastReadAt ? gt2(messages.createdAt, conversation.lastReadAt) : sql`1 = 1`
       ));
-      const person = partner[0];
+      let person = partner[0];
+      if (!person && conversation.type === "direct") {
+        const selfUser = await db.select({ id: users.id, name: users.name, nickname: users.nickname, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(users).where(eq4(users.id, ctx.user.id)).limit(1);
+        if (selfUser[0]) {
+          person = {
+            ...selfUser[0],
+            name: "Voc\xEA (Anota\xE7\xF5es Pessoais)"
+          };
+        }
+      }
       const muteRecord = await db.select({ mutedUntil: mutedConversations.mutedUntil }).from(mutedConversations).where(and3(eq4(mutedConversations.userId, ctx.user.id), eq4(mutedConversations.conversationId, conversation.id))).limit(1);
       const isMuted = Boolean(muteRecord[0] && (!muteRecord[0].mutedUntil || muteRecord[0].mutedUntil > /* @__PURE__ */ new Date()));
       const blockRecord = person ? await db.select({ blockedUserId: blockedUsers.blockedUserId }).from(blockedUsers).where(and3(eq4(blockedUsers.userId, ctx.user.id), eq4(blockedUsers.blockedUserId, person.id))).limit(1) : [];
@@ -2143,11 +2368,21 @@ var profileRouter = router({
     const hiddenIds = new Set(hidden.map((h) => h.targetUserId));
     const blocked = await db.select({ blockedUserId: blockedUsers.blockedUserId }).from(blockedUsers).where(eq5(blockedUsers.userId, ctx.user.id));
     const blockedIds = new Set(blocked.map((b) => b.blockedUserId));
-    return results.filter((user) => !hiddenIds.has(user.id)).map((user) => ({
-      ...user,
-      online: isOnline(user.lastSeen),
-      isBlocked: blockedIds.has(user.id)
-    }));
+    const seen = /* @__PURE__ */ new Set();
+    const deduped = [];
+    for (const user of results) {
+      if (hiddenIds.has(user.id)) continue;
+      const key = (user.nickname || user.email || String(user.id)).toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push({
+          ...user,
+          online: isOnline(user.lastSeen),
+          isBlocked: blockedIds.has(user.id)
+        });
+      }
+    }
+    return deduped;
   })
 });
 

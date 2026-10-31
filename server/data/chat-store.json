@@ -1,7 +1,113 @@
 {
-  "users": [],
-  "conversations": [],
-  "conversationMembers": [],
+  "users": [
+    {
+      "id": 1,
+      "openId": "murilo_silva_pai",
+      "name": "Murilo Silva",
+      "email": "olirumtecapp@gmail.com",
+      "nickname": "@olirumpai",
+      "avatarKey": null,
+      "avatarUrl": null,
+      "status": "Disponível 🚀",
+      "lastSeen": "2026-10-31T12:00:00.000Z",
+      "loginMethod": "commercial-auth",
+      "role": "admin",
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "updatedAt": "2026-10-31T12:00:00.000Z",
+      "lastSignedIn": "2026-10-31T12:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "openId": "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a",
+      "name": "Esposa Silva",
+      "email": "esposa@gmail.com",
+      "nickname": "@esposasilva",
+      "avatarKey": null,
+      "avatarUrl": null,
+      "status": "Disponível ❤️",
+      "lastSeen": "2026-10-31T12:00:00.000Z",
+      "loginMethod": "commercial-auth",
+      "role": "user",
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "updatedAt": "2026-10-31T12:00:00.000Z",
+      "lastSignedIn": "2026-10-31T12:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "openId": "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b",
+      "name": "Filho Silva",
+      "email": "filho@gmail.com",
+      "nickname": "@olirumfilho",
+      "avatarKey": null,
+      "avatarUrl": null,
+      "status": "Disponível 🎮",
+      "lastSeen": "2026-10-31T12:00:00.000Z",
+      "loginMethod": "commercial-auth",
+      "role": "user",
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "updatedAt": "2026-10-31T12:00:00.000Z",
+      "lastSignedIn": "2026-10-31T12:00:00.000Z"
+    }
+  ],
+  "conversations": [
+    {
+      "id": 1,
+      "type": "direct",
+      "directKey": "1:4",
+      "title": null,
+      "groupOwnerId": null,
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "updatedAt": "2026-10-31T12:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "type": "direct",
+      "directKey": "1:3",
+      "title": null,
+      "groupOwnerId": null,
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "updatedAt": "2026-10-31T12:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "type": "direct",
+      "directKey": "3:4",
+      "title": null,
+      "groupOwnerId": null,
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "updatedAt": "2026-10-31T12:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "type": "direct",
+      "directKey": "1:1",
+      "title": "Anotações Pessoais (Você)",
+      "groupOwnerId": null,
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "updatedAt": "2026-10-31T12:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "type": "group",
+      "directKey": null,
+      "title": "Família Silva ❤️",
+      "groupOwnerId": 1,
+      "createdAt": "2026-10-31T12:00:00.000Z",
+      "updatedAt": "2026-10-31T12:00:00.000Z"
+    }
+  ],
+  "conversationMembers": [
+    { "conversationId": 1, "userId": 1, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 1, "userId": 4, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 2, "userId": 1, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 2, "userId": 3, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 3, "userId": 3, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 3, "userId": 4, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 4, "userId": 1, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 5, "userId": 1, "memberRole": "admin", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 5, "userId": 3, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" },
+    { "conversationId": 5, "userId": 4, "memberRole": "member", "joinedAt": "2026-10-31T12:00:00.000Z", "lastReadAt": "2026-10-31T12:00:00.000Z" }
+  ],
   "messages": [],
   "messageStatuses": [],
   "messageDeletions": [],

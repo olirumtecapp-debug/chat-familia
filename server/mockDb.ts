@@ -120,10 +120,117 @@ const DATA_DIR = IS_VERCEL ? "/tmp" : path.resolve(process.cwd(), "server", "dat
 const STORE_FILE = path.join(DATA_DIR, "chat-store.json");
 
 function getInitialStore(): ChatStore {
+  const now = new Date();
   return {
-    users: [],
-    conversations: [],
-    conversationMembers: [],
+    users: [
+      {
+        id: 1,
+        openId: "murilo_silva_pai",
+        name: "Murilo Silva",
+        email: "olirumtecapp@gmail.com",
+        nickname: "@olirumpai",
+        avatarKey: null,
+        avatarUrl: null,
+        status: "Disponível 🚀",
+        lastSeen: now,
+        loginMethod: "commercial-auth",
+        role: "admin",
+        createdAt: now,
+        updatedAt: now,
+        lastSignedIn: now,
+      },
+      {
+        id: 3,
+        openId: "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a",
+        name: "Esposa Silva",
+        email: "esposa@gmail.com",
+        nickname: "@esposasilva",
+        avatarKey: null,
+        avatarUrl: null,
+        status: "Disponível ❤️",
+        lastSeen: now,
+        loginMethod: "commercial-auth",
+        role: "user",
+        createdAt: now,
+        updatedAt: now,
+        lastSignedIn: now,
+      },
+      {
+        id: 4,
+        openId: "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b",
+        name: "Filho Silva",
+        email: "filho@gmail.com",
+        nickname: "@olirumfilho",
+        avatarKey: null,
+        avatarUrl: null,
+        status: "Disponível 🎮",
+        lastSeen: now,
+        loginMethod: "commercial-auth",
+        role: "user",
+        createdAt: now,
+        updatedAt: now,
+        lastSignedIn: now,
+      },
+    ],
+    conversations: [
+      {
+        id: 1,
+        type: "direct",
+        directKey: "1:4",
+        title: null,
+        groupOwnerId: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 2,
+        type: "direct",
+        directKey: "1:3",
+        title: null,
+        groupOwnerId: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 3,
+        type: "direct",
+        directKey: "3:4",
+        title: null,
+        groupOwnerId: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 4,
+        type: "direct",
+        directKey: "1:1",
+        title: "Anotações Pessoais (Você)",
+        groupOwnerId: null,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 5,
+        type: "group",
+        directKey: null,
+        title: "Família Silva ❤️",
+        groupOwnerId: 1,
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    conversationMembers: [
+      { conversationId: 1, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 1, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 2, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 2, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 3, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 3, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 4, userId: 1, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 5, userId: 1, memberRole: "admin", joinedAt: now, lastReadAt: now },
+      { conversationId: 5, userId: 3, memberRole: "member", joinedAt: now, lastReadAt: now },
+      { conversationId: 5, userId: 4, memberRole: "member", joinedAt: now, lastReadAt: now },
+    ],
     messages: [],
     messageStatuses: [],
     messageDeletions: [],
@@ -141,19 +248,54 @@ let store: ChatStore = loadStore();
 
 function loadStore(): ChatStore {
   try {
-    if (fs.existsSync(STORE_FILE)) {
-      const raw = fs.readFileSync(STORE_FILE, "utf-8");
+    const candidateFiles = [
+      STORE_FILE,
+      path.resolve(process.cwd(), "server", "data", "chat-store.json"),
+      path.resolve(process.cwd(), "dist", "server", "data", "chat-store.json"),
+    ];
+
+    let foundFile: string | null = null;
+    for (const f of candidateFiles) {
+      if (fs.existsSync(f)) {
+        foundFile = f;
+        break;
+      }
+    }
+
+    if (foundFile) {
+      const raw = fs.readFileSync(foundFile, "utf-8");
       const parsed = JSON.parse(raw);
-      // Revive dates
       const data = reviveDates(parsed);
-      if (data && Array.isArray(data.conversations)) {
-        // Strip out any dummy/placeholder conversations
-        data.conversations = data.conversations.filter((c: any) => c.title !== "Família Silva ❤️");
-      }
+
       if (data && Array.isArray(data.users)) {
-        // Strip out any test/placeholder users
-        data.users = data.users.filter((u: any) => u.email !== "carlos.familia@teste.com" && u.name !== "Tio Carlos");
+        // Deduplicate users by normalized email or nickname
+        const userMap = new Map<string, any>();
+        for (const u of data.users) {
+          const key = (u.nickname || u.email || String(u.id)).toLowerCase();
+          if (!userMap.has(key)) {
+            userMap.set(key, u);
+          }
+        }
+
+        // Guarantee canonical family users exist
+        const initial = getInitialStore();
+        for (const u of initial.users) {
+          const key = (u.nickname || u.email || String(u.id)).toLowerCase();
+          if (!userMap.has(key)) {
+            userMap.set(key, u);
+          }
+        }
+        data.users = Array.from(userMap.values());
+      } else {
+        data.users = getInitialStore().users;
       }
+
+      // Guarantee default conversations exist
+      if (!Array.isArray(data.conversations) || data.conversations.length === 0) {
+        data.conversations = getInitialStore().conversations;
+        data.conversationMembers = getInitialStore().conversationMembers;
+      }
+
       data.blockedUsers = data.blockedUsers || [];
       data.mutedConversations = data.mutedConversations || [];
       data.hiddenContacts = data.hiddenContacts || [];
@@ -235,8 +377,14 @@ function extractCondition(cond: any): any {
     return extractCondition(chunks[1]);
   }
 
-  const isAnd = chunks.some((c: any) => typeof c?.value?.[0] === "string" && c.value[0].includes(" and "));
-  const isOr = chunks.some((c: any) => typeof c?.value?.[0] === "string" && c.value[0].includes(" or "));
+  const isAnd = chunks.some((c: any) => {
+    const raw = typeof c?.value === "string" ? c.value : (Array.isArray(c?.value) ? c.value.join(" ") : (typeof c === "string" ? c : ""));
+    return typeof raw === "string" && /\band\b/i.test(raw);
+  });
+  const isOr = chunks.some((c: any) => {
+    const raw = typeof c?.value === "string" ? c.value : (Array.isArray(c?.value) ? c.value.join(" ") : (typeof c === "string" ? c : ""));
+    return typeof raw === "string" && /\bor\b/i.test(raw);
+  });
 
   if (isAnd) {
     const subConds = chunks.filter((c: any) => c && c.queryChunks);
@@ -247,6 +395,8 @@ function extractCondition(cond: any): any {
     return { type: "or", conditions: subConds.map(extractCondition).filter(Boolean) };
   }
 
+  let leftCol: string | null = null;
+  let rightCol: string | null = null;
   let colName: string | null = null;
   let op = "=";
   let targetVal: any = undefined;
@@ -258,8 +408,14 @@ function extractCondition(cond: any): any {
       if (sub && sub.colName) return sub;
       if (sub && (sub.type === "and" || sub.type === "or")) return sub;
     }
-    if (chunk && chunk.name && typeof chunk.table !== "undefined") {
-      colName = chunk.name;
+    if (chunk && (chunk.name || chunk.key) && typeof chunk.table !== "undefined") {
+      const col = chunk.key || chunk.name;
+      if (!leftCol) {
+        leftCol = col;
+        colName = col;
+      } else {
+        rightCol = col;
+      }
     } else if (chunk && chunk.value && Array.isArray(chunk.value)) {
       const v = chunk.value[0];
       if (typeof v === "string") {
@@ -285,7 +441,24 @@ function extractCondition(cond: any): any {
     }
   }
 
-  return { type: "single", colName, op, targetVal };
+  return { type: "single", colName, leftCol, rightCol, op, targetVal };
+}
+
+function toCamelCase(str: string): string {
+  return str.replace(/_([a-z0-9])/g, (_, letter) => letter.toUpperCase());
+}
+function toSnakeCase(str: string): string {
+  return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+}
+
+function getItemValue(item: any, colName: string): any {
+  if (!item || !colName) return undefined;
+  if (item[colName] !== undefined) return item[colName];
+  const camel = toCamelCase(colName);
+  if (item[camel] !== undefined) return item[camel];
+  const snake = toSnakeCase(colName);
+  if (item[snake] !== undefined) return item[snake];
+  return undefined;
 }
 
 function evaluateParsed(item: any, parsed: any): boolean {
@@ -299,7 +472,7 @@ function evaluateParsed(item: any, parsed: any): boolean {
   if (parsed.type === "single") {
     const { colName, op, targetVal } = parsed;
     if (!colName) return true;
-    const val = item[colName];
+    const val = getItemValue(item, colName);
 
     switch (op) {
       case "=":
@@ -397,17 +570,21 @@ export function getMockDb() {
                   const jCond = extractCondition(j.on);
                   // Find matching joined row
                   const match = jTableRows.find(jRow => {
-                    if (jCond && jCond.colName) {
-                      // ColName in join usually matches id, userId, or messageId
-                      return (
-                        jRow.id === row[jCond.colName] ||
-                        jRow[jCond.colName] === row.id ||
-                        jRow.id === row.userId ||
-                        jRow.userId === row.id ||
-                        jRow.messageId === row.id
-                      );
+                    if (jCond) {
+                      const lCol = jCond.leftCol || jCond.colName;
+                      const rCol = jCond.rightCol || "id";
+                      const v1 = getItemValue(row, lCol);
+                      const v2 = getItemValue(jRow, rCol);
+                      if (v1 !== undefined && v2 !== undefined && v1 === v2) return true;
+
+                      const rev1 = getItemValue(row, rCol);
+                      const rev2 = getItemValue(jRow, lCol);
+                      if (rev1 !== undefined && rev2 !== undefined && rev1 === rev2) return true;
+
+                      if (v1 !== undefined && jRow.id === v1) return true;
+                      if (rev1 !== undefined && jRow.id === rev1) return true;
                     }
-                    return true;
+                    return false;
                   });
                   if (!match) {
                     if (!j.isLeft) {
@@ -446,7 +623,7 @@ export function getMockDb() {
                 for (const k of fieldKeys) {
                   const colSpec = fields[k];
                   const colName = colSpec?.name || k;
-                  res[k] = item[colName] !== undefined ? item[colName] : item[k];
+                  res[k] = getItemValue(item, colName) !== undefined ? getItemValue(item, colName) : getItemValue(item, k);
                 }
                 return res;
               });
@@ -481,6 +658,7 @@ export function getMockDb() {
               const existingIdx = tableItems.findIndex(existing => {
                 if (item.openId && existing.openId === item.openId) return true;
                 if (item.email && existing.email && item.email.toLowerCase() === existing.email.toLowerCase()) return true;
+                if (tableName === "users" && item.nickname && existing.nickname && item.nickname.toLowerCase() === existing.nickname.toLowerCase()) return true;
                 if (item.directKey && existing.directKey === item.directKey) return true;
                 if (item.conversationId && item.userId && existing.conversationId === item.conversationId && existing.userId === item.userId) return true;
                 if (item.id && existing.id === item.id) return true;
@@ -489,7 +667,9 @@ export function getMockDb() {
 
               if (existingIdx >= 0) {
                 if (updateSet && typeof updateSet === "object") {
-                  Object.assign(tableItems[existingIdx], updateSet);
+                  Object.assign(tableItems[existingIdx], item, updateSet);
+                } else {
+                  Object.assign(tableItems[existingIdx], item);
                 }
                 lastInsertId = tableItems[existingIdx].id || 0;
               } else {

@@ -96,31 +96,77 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function upsertLocalUser(input: { name: string; email: string; nickname?: string }) {
   const email = input.email.trim().toLowerCase();
   const name = input.name.trim();
+  let nickname = input.nickname?.trim();
+  if (nickname && !nickname.startsWith("@")) {
+    nickname = `@${nickname.toLowerCase()}`;
+  } else if (nickname) {
+    nickname = nickname.toLowerCase();
+  }
+
+  // Canonical mapping for family accounts to guarantee single source of truth
+  let canonicalOpenId: string | null = null;
+  let canonicalId: number | null = null;
+  if (email === "olirumtecapp@gmail.com" || nickname === "@olirumpai") {
+    canonicalOpenId = "murilo_silva_pai";
+    canonicalId = 1;
+    nickname = "@olirumpai";
+  } else if (email === "esposa@gmail.com" || nickname === "@esposasilva") {
+    canonicalOpenId = "local_cc656bff4f925bf4b69d0e25773bdd412120404ca44eb38f866c7bfa9a";
+    canonicalId = 3;
+    nickname = "@esposasilva";
+  } else if (email === "filho@gmail.com" || nickname === "@olirumfilho") {
+    canonicalOpenId = "local_7c9c98a82451e8ff7f8e871e4ed3cbc8142ab9afc8074505e13ed7390b";
+    canonicalId = 4;
+    nickname = "@olirumfilho";
+  }
+
+  const now = new Date();
+  const db = await getDb();
 
   try {
-    const existing = await getUserByEmail(email);
-    const db = await getDb();
+    // 1. Try to find by canonical openId
+    let existing: any = null;
+    if (canonicalOpenId) {
+      existing = await getUserByOpenId(canonicalOpenId);
+    }
+    // 2. Try to find by email
+    if (!existing) {
+      existing = await getUserByEmail(email);
+    }
 
     if (existing) {
-      await db.update(users).set({ name, ...(input.nickname ? { nickname: input.nickname } : {}), lastSignedIn: new Date(), lastSeen: new Date(), loginMethod: "commercial-auth" }).where(eq(users.id, existing.id));
-      const refreshed = await getUserByEmail(email);
+      await db.update(users).set({
+        name,
+        email,
+        ...(nickname ? { nickname } : {}),
+        lastSignedIn: now,
+        lastSeen: now,
+        loginMethod: "commercial-auth"
+      }).where(eq(users.id, existing.id));
+      const refreshed = await getUserByOpenId(existing.openId);
       return refreshed || existing;
     }
 
-    const openId = `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
-    const now = new Date();
-    await db.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: now, lastSeen: now }).onDuplicateKeyUpdate({ set: { name, ...(input.nickname ? { nickname: input.nickname } : {}), lastSignedIn: now, lastSeen: now, loginMethod: "commercial-auth" } });
-    
-    // Auto join default family group
-    try {
-      const createdUser = await getUserByOpenId(openId);
-      if (createdUser) {
-        const groups = await db.select().from(conversations).where(eq(conversations.type, "group")).limit(1);
-        if (groups[0]) {
-          await db.insert(conversationMembers).values({ conversationId: groups[0].id, userId: createdUser.id, memberRole: "member", joinedAt: now }).onDuplicateKeyUpdate({ set: { joinedAt: now } });
-        }
+    const openId = canonicalOpenId || `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    await db.insert(users).values({
+      ...(canonicalId ? { id: canonicalId } : {}),
+      openId,
+      name,
+      nickname: nickname || null,
+      email,
+      loginMethod: "commercial-auth",
+      lastSignedIn: now,
+      lastSeen: now
+    }).onDuplicateKeyUpdate({
+      set: {
+        name,
+        email,
+        ...(nickname ? { nickname } : {}),
+        lastSignedIn: now,
+        lastSeen: now,
+        loginMethod: "commercial-auth"
       }
-    } catch (_) {}
+    });
 
     const user = await getUserByOpenId(openId);
     if (!user) throw new Error("Local user could not be created");
@@ -129,13 +175,39 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     console.warn("[Database] upsertLocalUser failed, falling back to mockDb:", err?.message || err);
     useMockFallback = true;
     const mock = getMockDb();
-    const existing = await mock.select().from(users).where(eq(users.email, email)).limit(1);
-    if (existing[0]) {
-      await (mock.update(users).set({ name, ...(input.nickname ? { nickname: input.nickname } : {}), lastSignedIn: new Date() }).where(eq(users.id, existing[0].id)) as any);
-      return { ...existing[0], name, ...(input.nickname ? { nickname: input.nickname } : {}) };
+
+    let existing: any = null;
+    if (canonicalOpenId) {
+      const res = await mock.select().from(users).where(eq(users.openId, canonicalOpenId)).limit(1);
+      existing = res[0];
     }
-    const openId = `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
-    await (mock.insert(users).values({ openId, name, nickname: input.nickname || null, email, loginMethod: "commercial-auth", lastSignedIn: new Date(), lastSeen: new Date() }) as any);
+    if (!existing) {
+      const res = await mock.select().from(users).where(eq(users.email, email)).limit(1);
+      existing = res[0];
+    }
+
+    if (existing) {
+      await (mock.update(users).set({
+        name,
+        email,
+        ...(nickname ? { nickname } : {}),
+        lastSignedIn: now,
+        lastSeen: now
+      }).where(eq(users.id, existing.id)) as any);
+      return { ...existing, name, email, ...(nickname ? { nickname } : {}), lastSignedIn: now, lastSeen: now };
+    }
+
+    const openId = canonicalOpenId || `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    await (mock.insert(users).values({
+      ...(canonicalId ? { id: canonicalId } : {}),
+      openId,
+      name,
+      nickname: nickname || null,
+      email,
+      loginMethod: "commercial-auth",
+      lastSignedIn: now,
+      lastSeen: now
+    }) as any);
     const user = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
     return user[0];
   }

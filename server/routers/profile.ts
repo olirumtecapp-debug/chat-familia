@@ -180,12 +180,22 @@ export const profileRouter = router({
         .where(eq(blockedUsers.userId, ctx.user.id));
       const blockedIds = new Set(blocked.map(b => b.blockedUserId));
 
-      return results
-        .filter((user: any) => !hiddenIds.has(user.id))
-        .map((user: any) => ({
-          ...user,
-          online: isOnline(user.lastSeen),
-          isBlocked: blockedIds.has(user.id),
-        }));
+      // Hard deduplication by nickname or email
+      const seen = new Set<string>();
+      const deduped: any[] = [];
+      for (const user of results) {
+        if (hiddenIds.has(user.id)) continue;
+        const key = (user.nickname || user.email || String(user.id)).toLowerCase();
+        if (!seen.has(key)) {
+          seen.add(key);
+          deduped.push({
+            ...user,
+            online: isOnline(user.lastSeen),
+            isBlocked: blockedIds.has(user.id),
+          });
+        }
+      }
+
+      return deduped;
     }),
 });

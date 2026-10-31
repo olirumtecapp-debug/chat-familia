@@ -71,8 +71,10 @@ async function recipientIds(conversationId: number, userId: number) {
         } catch (_) {}
         return [otherId];
       }
+      // Self-conversation: recipient is self
+      return [userId];
     }
-    throw new TRPCError({ code: "BAD_REQUEST", message: "A conversa precisa ter outro participante." });
+    return [userId];
   }
   return rows.map(row => row.userId);
 }
@@ -83,16 +85,19 @@ function online(lastSeen: Date) {
 
 export const messagingRouter = router({
   createDirect: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-    if (input.userId === ctx.user.id) throw new TRPCError({ code: "BAD_REQUEST", message: "Escolha outra pessoa para conversar." });
+    if (input.userId === ctx.user.id) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "Para suas próprias anotações, use a conversa 'Anotações Pessoais'." });
+    }
     const db = await requireDatabase();
     const other = await db.select({ id: users.id }).from(users).where(eq(users.id, input.userId)).limit(1);
     if (!other[0]) throw new TRPCError({ code: "NOT_FOUND", message: "Pessoa não encontrada." });
 
     const directKey = [ctx.user.id, input.userId].sort((a, b) => a - b).join(":");
+
     const existing = await db.select({ id: conversations.id }).from(conversations).where(eq(conversations.directKey, directKey)).limit(1);
     if (existing[0]) {
       const convId = existing[0].id;
-      // Ensure both users are members (in case one previously deleted/left the conversation)
+      // Ensure user is member (in case one previously deleted/left the conversation)
       const members = await db
         .select({ userId: conversationMembers.userId })
         .from(conversationMembers)
@@ -120,7 +125,10 @@ export const messagingRouter = router({
     }
 
     try {
-      const created = await db.insert(conversations).values({ type: "direct", directKey });
+      const created = await db.insert(conversations).values({
+        type: "direct",
+        directKey,
+      });
       const conversationId = Number(created[0].insertId);
       await db.insert(conversationMembers).values([
         { conversationId, userId: ctx.user.id, lastReadAt: new Date() },
@@ -165,7 +173,20 @@ export const messagingRouter = router({
           isNull(messages.deletedAt),
           conversation.lastReadAt ? gt(messages.createdAt, conversation.lastReadAt) : sql`1 = 1`,
         ));
-      const person = partner[0];
+      let person = partner[0];
+      if (!person && conversation.type === "direct") {
+        const selfUser = await db
+          .select({ id: users.id, name: users.name, nickname: users.nickname, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen })
+          .from(users)
+          .where(eq(users.id, ctx.user.id))
+          .limit(1);
+        if (selfUser[0]) {
+          person = {
+            ...selfUser[0],
+            name: "Você (Anotações Pessoais)",
+          };
+        }
+      }
 
       const muteRecord = await db
         .select({ mutedUntil: mutedConversations.mutedUntil })

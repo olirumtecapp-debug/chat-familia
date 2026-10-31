@@ -95,21 +95,23 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
 }
 
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
   const key = normalizeKey(relKey);
+  try {
+    if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+      const { forgeUrl, forgeKey } = getForgeConfig();
+      const getUrl = new URL("v1/storage/presign/get", forgeUrl + "/");
+      getUrl.searchParams.set("path", key);
 
-  const getUrl = new URL("v1/storage/presign/get", forgeUrl + "/");
-  getUrl.searchParams.set("path", key);
+      const resp = await fetch(getUrl, {
+        headers: { Authorization: `Bearer ${forgeKey}` },
+      });
 
-  const resp = await fetch(getUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` },
-  });
+      if (resp.ok) {
+        const { url } = (await resp.json()) as { url: string };
+        if (url) return url;
+      }
+    }
+  } catch (_) {}
 
-  if (!resp.ok) {
-    const msg = await resp.text().catch(() => resp.statusText);
-    throw new Error(`Storage signed URL failed (${resp.status}): ${msg}`);
-  }
-
-  const { url } = (await resp.json()) as { url: string };
-  return url;
+  return `/manus-storage/${key}`;
 }

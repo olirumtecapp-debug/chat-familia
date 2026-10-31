@@ -1790,7 +1790,42 @@ export default function Home() {
 <button type="button" aria-label="Anexar imagem, gif ou documento" onClick={() => imageInput.current?.click()} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0"><Paperclip className="w-5 h-5" /></button>
 <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} />
 <button type="button" aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0"><Mic className="w-5 h-5" /></button>
-<button type="button" aria-label="Enviar mensagem" disabled={send.isPending || (!composer.trim() && !image)} onClick={() => submit()} className="send-btn" title="Enviar mensagem (Enter)">{send.isPending ? <Loader2 className="animate-spin w-5 h-5 text-white" /> : <SendHorizonal className="w-5 h-5 text-white" />}</button></div>}</div>
+<button
+  type="button"
+  aria-label="Enviar mensagem"
+  onClick={() => {
+    if (composer.trim() || image) {
+      submit();
+    }
+  }}
+  style={{
+    backgroundColor: "#0080EA",
+    color: "#FFFFFF",
+    width: "42px",
+    height: "42px",
+    minWidth: "42px",
+    minHeight: "42px",
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxShadow: "0 4px 12px rgba(0, 128, 234, 0.4)",
+    cursor: composer.trim() || image ? "pointer" : "default",
+    opacity: composer.trim() || image ? 1 : 0.65,
+    border: "none",
+    padding: 0,
+    flexShrink: 0,
+    transition: "all 0.15s ease",
+  }}
+  className="send-btn"
+  title="Enviar mensagem (Enter)"
+>
+  {send.isPending ? (
+    <Loader2 className="animate-spin w-5 h-5" style={{ color: "#FFFFFF", stroke: "#FFFFFF" }} />
+  ) : (
+    <SendHorizonal className="w-5 h-5" style={{ color: "#FFFFFF", stroke: "#FFFFFF" }} />
+  )}
+</button></div>}</div>
     </>}</main>
     <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><ContactActionModal target={contextTarget} onClose={() => setContextTarget(null)} onDeleted={() => setSelectedId(null)} />
     <GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />
