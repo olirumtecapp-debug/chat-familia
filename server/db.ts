@@ -258,7 +258,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
 export async function upsertLocalUser(input: { name: string; email: string; nickname?: string }) {
   const email = input.email.trim().toLowerCase();
-  const name = input.name.trim();
+  const fallbackName = input.name?.trim() || input.nickname?.replace(/^@/, '') || input.email.split('@')[0] || 'Usuário';
+  const name = fallbackName;
   let nickname = input.nickname?.trim();
   if (nickname && !nickname.startsWith("@")) {
     nickname = `@${nickname.toLowerCase()}`;
@@ -278,7 +279,7 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
 
     if (existing) {
       await db.update(users).set({
-        name,
+        name: (input.name?.trim() || existing.name || fallbackName),
         email,
         ...(nickname ? { nickname } : {}),
         lastSignedIn: now,

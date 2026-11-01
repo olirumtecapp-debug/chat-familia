@@ -26,7 +26,7 @@ export const profileRouter = router({
     const result = await db.select().from(users).where(eq(users.id, ctx.user.id)).limit(1);
     const profile = result[0];
     if (!profile) throw new TRPCError({ code: "NOT_FOUND" });
-    return { ...profile, online: isOnline(profile.lastSeen), isComplete: Boolean(profile.name && profile.email) };
+    return { ...profile, online: isOnline(profile.lastSeen), isComplete: Boolean((profile.name || profile.nickname) && profile.email) };
   }),
 
   update: protectedProcedure.input(profileInput).mutation(async ({ ctx, input }) => {

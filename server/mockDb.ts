@@ -447,6 +447,15 @@ export function getRawStore(): ChatStore {
   return store;
 }
 
+
+function getColumnTable(colSpec: any): keyof ChatStore | null {
+  if (!colSpec || typeof colSpec !== "object") return null;
+  const t = colSpec.table;
+  if (!t) return null;
+  const raw = t[Symbol.for("drizzle:Name")] || t._?.name || t.name;
+  return raw ? getTableName(raw) : null;
+}
+
 function getTableName(table: any): keyof ChatStore {
   if (!table) return "users";
   // Drizzle mysqlTable objects have Symbol(drizzle:Name) or _.name
@@ -694,6 +703,7 @@ export function getMockDb() {
               for (const row of list) {
                 let matchAll = true;
                 const merged = { ...row };
+                const byTable: Record<string, any> = { [tableName]: row };
                 for (const j of joins) {
                   const jTableName = getTableName(j.table);
                   const jTableRows = (store[jTableName] as any[]) || [];
@@ -719,9 +729,11 @@ export function getMockDb() {
                       break;
                     }
                   } else {
+                    byTable[jTableName] = match;
                     Object.assign(merged, match);
                   }
                 }
+                merged._byTable = byTable;
                 if (matchAll) joinedList.push(merged);
               }
               list = joinedList;
@@ -750,7 +762,12 @@ export function getMockDb() {
                 for (const k of fieldKeys) {
                   const colSpec = fields[k];
                   const colName = colSpec?.name || k;
-                  res[k] = getItemValue(item, colName) !== undefined ? getItemValue(item, colName) : getItemValue(item, k);
+                  const tName = getColumnTable(colSpec);
+                  if (tName && item._byTable?.[tName] && item._byTable[tName][colName] !== undefined) {
+                    res[k] = item._byTable[tName][colName];
+                  } else {
+                    res[k] = getItemValue(item, colName) !== undefined ? getItemValue(item, colName) : getItemValue(item, k);
+                  }
                 }
                 return res;
               });

@@ -471,6 +471,13 @@ function resetChatStore() {
   persistStore();
   return store;
 }
+function getColumnTable(colSpec) {
+  if (!colSpec || typeof colSpec !== "object") return null;
+  const t2 = colSpec.table;
+  if (!t2) return null;
+  const raw = t2[Symbol.for("drizzle:Name")] || t2._?.name || t2.name;
+  return raw ? getTableName(raw) : null;
+}
 function getTableName(table) {
   if (!table) return "users";
   const name = table[Symbol.for("drizzle:Name")] || table._?.name || table.name || (typeof table === "string" ? table : "");
@@ -701,6 +708,7 @@ function getMockDb() {
                 for (const row of list) {
                   let matchAll = true;
                   const merged = { ...row };
+                  const byTable = { [tableName]: row };
                   for (const j of joins) {
                     const jTableName = getTableName(j.table);
                     const jTableRows = store[jTableName] || [];
@@ -724,9 +732,11 @@ function getMockDb() {
                         break;
                       }
                     } else {
+                      byTable[jTableName] = match;
                       Object.assign(merged, match);
                     }
                   }
+                  merged._byTable = byTable;
                   if (matchAll) joinedList.push(merged);
                 }
                 list = joinedList;
@@ -751,7 +761,12 @@ function getMockDb() {
                   for (const k of fieldKeys) {
                     const colSpec = fields[k];
                     const colName = colSpec?.name || k;
-                    res[k] = getItemValue(item, colName) !== void 0 ? getItemValue(item, colName) : getItemValue(item, k);
+                    const tName = getColumnTable(colSpec);
+                    if (tName && item._byTable?.[tName] && item._byTable[tName][colName] !== void 0) {
+                      res[k] = item._byTable[tName][colName];
+                    } else {
+                      res[k] = getItemValue(item, colName) !== void 0 ? getItemValue(item, colName) : getItemValue(item, k);
+                    }
                   }
                   return res;
                 });
@@ -1130,7 +1145,8 @@ async function upsertUser(user) {
 }
 async function upsertLocalUser(input) {
   const email = input.email.trim().toLowerCase();
-  const name = input.name.trim();
+  const fallbackName = input.name?.trim() || input.nickname?.replace(/^@/, "") || input.email.split("@")[0] || "Usu\xE1rio";
+  const name = fallbackName;
   let nickname = input.nickname?.trim();
   if (nickname && !nickname.startsWith("@")) {
     nickname = `@${nickname.toLowerCase()}`;
@@ -1145,7 +1161,7 @@ async function upsertLocalUser(input) {
     existing = emailResult[0];
     if (existing) {
       await db.update(users).set({
-        name,
+        name: input.name?.trim() || existing.name || fallbackName,
         email,
         ...nickname ? { nickname } : {},
         lastSignedIn: now,
@@ -2479,7 +2495,7 @@ var profileRouter = router({
     const result = await db.select().from(users).where(eq5(users.id, ctx.user.id)).limit(1);
     const profile = result[0];
     if (!profile) throw new TRPCError6({ code: "NOT_FOUND" });
-    return { ...profile, online: isOnline(profile.lastSeen), isComplete: Boolean(profile.name && profile.email) };
+    return { ...profile, online: isOnline(profile.lastSeen), isComplete: Boolean((profile.name || profile.nickname) && profile.email) };
   }),
   update: protectedProcedure.input(profileInput).mutation(async ({ ctx, input }) => {
     const db = await requireDatabase();

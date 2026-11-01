@@ -1340,11 +1340,11 @@ export default function Home() {
   const { installApp, showGuide, setShowGuide, isIOS, isInstalled } = usePwaInstall();
   const utils = trpc.useUtils();
   const profile = trpc.profile.me.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 20_000 });
-  const conversations = trpc.messaging.list.useQuery(undefined, { enabled: Boolean(profile.data?.isComplete), refetchInterval: 2_500 });
+  const conversations = trpc.messaging.list.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 2_500 });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [pendingContact, setPendingContact] = useState<{ name: string } | null>(null);
   const [sidebarTab, setSidebarTab] = useState<"chats" | "contacts">("chats");
-  const allContacts = trpc.profile.search.useQuery({ query: "" }, { enabled: Boolean(profile.data?.isComplete), refetchInterval: 10_000 });
+  const allContacts = trpc.profile.search.useQuery({ query: "" }, { enabled: isAuthenticated, refetchInterval: 10_000 });
   const createDirect = trpc.messaging.createDirect.useMutation({
     onSuccess: (result, variables) => {
       const contact = allContacts.data?.find(p => p.id === variables.userId);
@@ -1384,7 +1384,7 @@ export default function Home() {
   const typing = trpc.messaging.typing.useQuery({ conversationId: selectedId || 0 }, { enabled: conversationReady, refetchInterval: 1_500 });
   const acknowledge = trpc.messaging.acknowledge.useMutation(); const deleteMe = trpc.messaging.deleteForMe.useMutation(); const deleteAll = trpc.messaging.deleteForEveryone.useMutation(); const react = trpc.messaging.react.useMutation({ onSuccess: () => utils.messaging.history.invalidate() });
   const heartbeat = trpc.profile.heartbeat.useMutation(); const startCall = trpc.calls.start.useMutation({ onError: error => toast.error(error.message) });
-  const pendingCall = trpc.calls.pending.useQuery(undefined, { enabled: Boolean(profile.data?.isComplete), refetchInterval: 1_500 });
+  const pendingCall = trpc.calls.pending.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 1_500 });
   const [composer, setComposer] = useState(""); const [reply, setReply] = useState<ReplyTarget | null>(null); const [image, setImage] = useState<FilePayload | null>(null);
   const [olderMessages, setOlderMessages] = useState<any[]>([]); const [nextOlderCursor, setNextOlderCursor] = useState<Date | null>(null);
   const [recording, setRecording] = useState(false); const [recordingTime, setRecordingTime] = useState(0); const recorder = useRef<MediaRecorder | null>(null); const chunks = useRef<Blob[]>([]); const timer = useRef<number | null>(null); const recordingTimeRef = useRef(0); const recordGesture = useRef(false); const recordPointerType = useRef<string | null>(null);
