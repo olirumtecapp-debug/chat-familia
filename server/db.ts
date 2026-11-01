@@ -107,14 +107,11 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
   const db = await getDb();
 
   try {
+    // O e-mail identifica a conta. Não permita que outra pessoa tome um apelido
+    // já cadastrado apenas informando esse apelido no formulário de entrada.
     let existing: any = null;
-    if (nickname) {
-      const res = await db.select().from(users).where(eq(users.nickname as any, nickname)).limit(1);
-      existing = res[0];
-    }
-    if (!existing) {
-      existing = await getUserByEmail(email);
-    }
+    const emailResult = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    existing = emailResult[0];
 
     if (existing) {
       await db.update(users).set({
