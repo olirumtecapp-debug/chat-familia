@@ -13,8 +13,11 @@ const profileInput = z.object({
   nickname: z.string().trim().optional(),
 });
 
-function isOnline(lastSeen: Date) {
-  return Date.now() - lastSeen.getTime() < 70_000;
+function isOnline(lastSeen?: Date | string | null): boolean {
+  if (!lastSeen) return false;
+  const time = lastSeen instanceof Date ? lastSeen.getTime() : new Date(lastSeen).getTime();
+  if (isNaN(time)) return false;
+  return Date.now() - time < 70_000;
 }
 
 export const profileRouter = router({

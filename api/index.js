@@ -395,7 +395,15 @@ async function ensureCloudStoreHydrated(force = false) {
           }
           store.messages = reviveDates(Array.from(map.values()));
         } else {
-          store[tableName] = reviveDates(cloudItems);
+          if (tableName === "typingStates") {
+            const now = Date.now();
+            store.typingStates = reviveDates(cloudItems).filter((t2) => {
+              const time = t2.updatedAt instanceof Date ? t2.updatedAt.getTime() : new Date(t2.updatedAt).getTime();
+              return !isNaN(time) && now - time < 1e4;
+            });
+          } else {
+            store[tableName] = reviveDates(cloudItems);
+          }
         }
       } catch {
       }
@@ -590,14 +598,38 @@ function evaluateParsed(item, parsed) {
         if (targetVal instanceof Date && val instanceof Date) return val.getTime() !== targetVal.getTime();
         if (typeof targetVal === "string" && typeof val === "string") return val.toLowerCase() !== targetVal.toLowerCase();
         return val != targetVal;
-      case "<":
+      case "<": {
+        if (val instanceof Date || targetVal instanceof Date || typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+          const t1 = val instanceof Date ? val.getTime() : new Date(val).getTime();
+          const t2 = targetVal instanceof Date ? targetVal.getTime() : new Date(targetVal).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) return t1 < t2;
+        }
         return val < targetVal;
-      case "<=":
+      }
+      case "<=": {
+        if (val instanceof Date || targetVal instanceof Date || typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+          const t1 = val instanceof Date ? val.getTime() : new Date(val).getTime();
+          const t2 = targetVal instanceof Date ? targetVal.getTime() : new Date(targetVal).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) return t1 <= t2;
+        }
         return val <= targetVal;
-      case ">":
+      }
+      case ">": {
+        if (val instanceof Date || targetVal instanceof Date || typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+          const t1 = val instanceof Date ? val.getTime() : new Date(val).getTime();
+          const t2 = targetVal instanceof Date ? targetVal.getTime() : new Date(targetVal).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) return t1 > t2;
+        }
         return val > targetVal;
-      case ">=":
+      }
+      case ">=": {
+        if (val instanceof Date || targetVal instanceof Date || typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+          const t1 = val instanceof Date ? val.getTime() : new Date(val).getTime();
+          const t2 = targetVal instanceof Date ? targetVal.getTime() : new Date(targetVal).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) return t1 >= t2;
+        }
         return val >= targetVal;
+      }
       case "in":
         if (Array.isArray(targetVal)) {
           return targetVal.some((t2) => typeof t2 === "string" && typeof val === "string" ? val.toLowerCase() === t2.toLowerCase() : val == t2);
@@ -683,8 +715,6 @@ function getMockDb() {
                         const rev1 = getItemValue(row, rCol);
                         const rev2 = getItemValue(jRow, lCol);
                         if (rev1 !== void 0 && rev2 !== void 0 && rev1 === rev2) return true;
-                        if (v1 !== void 0 && jRow.id === v1) return true;
-                        if (rev1 !== void 0 && jRow.id === rev1) return true;
                       }
                       return false;
                     });
@@ -2076,7 +2106,10 @@ async function recipientIds(conversationId, userId) {
   return rows.map((row) => row.userId);
 }
 function online(lastSeen) {
-  return Date.now() - lastSeen.getTime() < 7e4;
+  if (!lastSeen) return false;
+  const time = lastSeen instanceof Date ? lastSeen.getTime() : new Date(lastSeen).getTime();
+  if (isNaN(time)) return false;
+  return Date.now() - time < 7e4;
 }
 var messagingRouter = router({
   createDirect: protectedProcedure.input(z4.object({ userId: z4.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -2158,7 +2191,11 @@ var messagingRouter = router({
       const isBlocked = Boolean(blockRecord[0]);
       return {
         ...conversation,
-        participant: person ? { ...person, online: online(person.lastSeen) } : null,
+        participant: person ? {
+          ...person,
+          name: person.name || person.nickname || (person.email ? person.email.split("@")[0] : "Contato"),
+          online: online(person.lastSeen)
+        } : null,
         latestMessage: latest[0] ?? null,
         unreadCount: Number(unread[0]?.count ?? 0),
         isMuted,
@@ -2303,6 +2340,10 @@ var messagingRouter = router({
       await db.insert(messageStatuses).values(recipients.map((userId) => ({ messageId, userId, status: "sent" })));
     } catch (_) {
     }
+    try {
+      await db.delete(typingStates).where(and3(eq4(typingStates.conversationId, input.conversationId), eq4(typingStates.userId, ctx.user.id)));
+    } catch (_) {
+    }
     await db.update(conversations).set({ updatedAt: /* @__PURE__ */ new Date() }).where(eq4(conversations.id, input.conversationId));
     publishRealtime([ctx.user.id, ...recipients], { type: "message", conversationId: input.conversationId });
     return { messageId, createdAt: /* @__PURE__ */ new Date() };
@@ -2427,7 +2468,10 @@ var profileInput = z5.object({
   nickname: z5.string().trim().optional()
 });
 function isOnline(lastSeen) {
-  return Date.now() - lastSeen.getTime() < 7e4;
+  if (!lastSeen) return false;
+  const time = lastSeen instanceof Date ? lastSeen.getTime() : new Date(lastSeen).getTime();
+  if (isNaN(time)) return false;
+  return Date.now() - time < 7e4;
 }
 var profileRouter = router({
   me: protectedProcedure.query(async ({ ctx }) => {

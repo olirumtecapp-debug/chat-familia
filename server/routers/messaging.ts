@@ -79,8 +79,11 @@ async function recipientIds(conversationId: number, userId: number) {
   return rows.map(row => row.userId);
 }
 
-function online(lastSeen: Date) {
-  return Date.now() - lastSeen.getTime() < 70_000;
+function online(lastSeen?: Date | string | null): boolean {
+  if (!lastSeen) return false;
+  const time = lastSeen instanceof Date ? lastSeen.getTime() : new Date(lastSeen).getTime();
+  if (isNaN(time)) return false;
+  return Date.now() - time < 70_000;
 }
 
 export const messagingRouter = router({
@@ -204,7 +207,11 @@ export const messagingRouter = router({
 
       return {
         ...conversation,
-        participant: person ? { ...person, online: online(person.lastSeen) } : null,
+        participant: person ? {
+          ...person,
+          name: person.name || person.nickname || (person.email ? person.email.split('@')[0] : 'Contato'),
+          online: online(person.lastSeen)
+        } : null,
         latestMessage: latest[0] ?? null,
         unreadCount: Number(unread[0]?.count ?? 0),
         isMuted,
@@ -387,6 +394,9 @@ export const messagingRouter = router({
     const messageId = Number(inserted[0].insertId);
     try {
       await db.insert(messageStatuses).values(recipients.map(userId => ({ messageId, userId, status: "sent" as const })));
+    } catch (_) {}
+    try {
+      await db.delete(typingStates).where(and(eq(typingStates.conversationId, input.conversationId), eq(typingStates.userId, ctx.user.id)));
     } catch (_) {}
     await db.update(conversations).set({ updatedAt: new Date() }).where(eq(conversations.id, input.conversationId));
     publishRealtime([ctx.user.id, ...recipients], { type: "message", conversationId: input.conversationId });

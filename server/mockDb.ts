@@ -309,7 +309,15 @@ export async function ensureCloudStoreHydrated(force = false): Promise<void> {
           }
           store.messages = reviveDates(Array.from(map.values()));
         } else {
-          (store as any)[tableName] = reviveDates(cloudItems);
+          if (tableName === "typingStates") {
+            const now = Date.now();
+            store.typingStates = reviveDates(cloudItems).filter((t: any) => {
+              const time = t.updatedAt instanceof Date ? t.updatedAt.getTime() : new Date(t.updatedAt).getTime();
+              return !isNaN(time) && now - time < 10000;
+            });
+          } else {
+            (store as any)[tableName] = reviveDates(cloudItems);
+          }
         }
       } catch {}
     }
@@ -578,14 +586,38 @@ function evaluateParsed(item: any, parsed: any): boolean {
         if (targetVal instanceof Date && val instanceof Date) return val.getTime() !== targetVal.getTime();
         if (typeof targetVal === "string" && typeof val === "string") return val.toLowerCase() !== targetVal.toLowerCase();
         return val != targetVal;
-      case "<":
+      case "<": {
+        if (val instanceof Date || targetVal instanceof Date || (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val))) {
+          const t1 = val instanceof Date ? val.getTime() : new Date(val).getTime();
+          const t2 = targetVal instanceof Date ? targetVal.getTime() : new Date(targetVal).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) return t1 < t2;
+        }
         return val < targetVal;
-      case "<=":
+      }
+      case "<=": {
+        if (val instanceof Date || targetVal instanceof Date || (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val))) {
+          const t1 = val instanceof Date ? val.getTime() : new Date(val).getTime();
+          const t2 = targetVal instanceof Date ? targetVal.getTime() : new Date(targetVal).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) return t1 <= t2;
+        }
         return val <= targetVal;
-      case ">":
+      }
+      case ">": {
+        if (val instanceof Date || targetVal instanceof Date || (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val))) {
+          const t1 = val instanceof Date ? val.getTime() : new Date(val).getTime();
+          const t2 = targetVal instanceof Date ? targetVal.getTime() : new Date(targetVal).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) return t1 > t2;
+        }
         return val > targetVal;
-      case ">=":
+      }
+      case ">=": {
+        if (val instanceof Date || targetVal instanceof Date || (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val))) {
+          const t1 = val instanceof Date ? val.getTime() : new Date(val).getTime();
+          const t2 = targetVal instanceof Date ? targetVal.getTime() : new Date(targetVal).getTime();
+          if (!isNaN(t1) && !isNaN(t2)) return t1 >= t2;
+        }
         return val >= targetVal;
+      }
       case "in":
         if (Array.isArray(targetVal)) {
           return targetVal.some(t => (typeof t === "string" && typeof val === "string" ? val.toLowerCase() === t.toLowerCase() : val == t));
@@ -678,9 +710,6 @@ export function getMockDb() {
                       const rev1 = getItemValue(row, rCol);
                       const rev2 = getItemValue(jRow, lCol);
                       if (rev1 !== undefined && rev2 !== undefined && rev1 === rev2) return true;
-
-                      if (v1 !== undefined && jRow.id === v1) return true;
-                      if (rev1 !== undefined && jRow.id === rev1) return true;
                     }
                     return false;
                   });
