@@ -37,4 +37,21 @@ describe("auth.loginSimple and session creation", () => {
     expect(result.token).toBeDefined();
     expect(cookiesSet.length).toBeGreaterThan(0);
   });
+
+  it("reuses the same account when email casing changes", async () => {
+    const { ctx: firstContext } = createMockContext(null);
+    const first = await appRouter.createCaller(firstContext).auth.loginSimple({
+      name: "Pessoa da Família",
+      email: "Pessoa@Familia.Test",
+    });
+
+    const { ctx: secondContext } = createMockContext(null);
+    const second = await appRouter.createCaller(secondContext).auth.loginSimple({
+      name: "Pessoa da Família",
+      email: "pessoa@familia.test",
+    });
+
+    expect(second.user.id).toBe(first.user.id);
+    expect(second.user.openId).toBe(first.user.openId);
+  });
 });
