@@ -302,7 +302,150 @@ function reviveDates(obj) {
   }
   return out;
 }
-function persistStore() {
+var FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "expedicao-brasil";
+var FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || "AIzaSyBUHGXoUMg0bV3EdmfpfmVAEYMLQceqkQc";
+var CLOUD_COL = "chatforall_cloud_store";
+var STORE_TABLES = [
+  "users",
+  "conversations",
+  "conversationMembers",
+  "messages",
+  "messageStatuses",
+  "messageDeletions",
+  "calls",
+  "callSignals",
+  "typingStates",
+  "blockedUsers",
+  "mutedConversations",
+  "hiddenContacts",
+  "messageReactions"
+];
+function firestoreBaseUrl(col, docId) {
+  const base = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT_ID + "/databases/(default)/documents/" + col;
+  const keyParam = FIREBASE_API_KEY ? "key=" + FIREBASE_API_KEY : "";
+  if (docId) {
+    return keyParam ? base + "/" + docId + "?" + keyParam : base + "/" + docId;
+  }
+  return keyParam ? base + "?pageSize=50&" + keyParam : base + "?pageSize=50";
+}
+var lastHydratedAt = 0;
+var dirtyTables = /* @__PURE__ */ new Set();
+var activeFlushPromise = null;
+async function ensureCloudStoreHydrated(force = false) {
+  if (process.env.VITEST) return;
+  if (activeFlushPromise) {
+    try {
+      await activeFlushPromise;
+    } catch {
+    }
+  }
+  if (!force && Date.now() - lastHydratedAt < 1e3) return;
+  lastHydratedAt = Date.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6e3);
+    const res = await fetch(firestoreBaseUrl(CLOUD_COL), { signal: controller.signal }).finally(() => clearTimeout(timer));
+    if (!res.ok) return;
+    const data = await res.json();
+    const docs = data?.documents || [];
+    if (docs.length === 0) return;
+    for (const doc of docs) {
+      const docName = doc?.name?.split("/").pop();
+      if (!docName || !docName.startsWith("table_")) continue;
+      const tableName = docName.replace("table_", "");
+      const payloadJson = doc?.fields?.payloadJson?.stringValue;
+      if (!payloadJson || dirtyTables.has(tableName)) continue;
+      try {
+        const cloudItems = JSON.parse(payloadJson);
+        if (!Array.isArray(cloudItems)) continue;
+        if (tableName === "users") {
+          const localItems = store.users || [];
+          const map = /* @__PURE__ */ new Map();
+          for (const c of cloudItems) {
+            const k = c.openId || (c.email ? String(c.email).toLowerCase() : null) || c.id;
+            map.set(k, c);
+          }
+          for (const l of localItems) {
+            const k = l.openId || (l.email ? String(l.email).toLowerCase() : null) || l.id;
+            if (!map.has(k)) {
+              map.set(k, l);
+            }
+          }
+          store.users = reviveDates(Array.from(map.values()));
+        } else if (tableName === "conversations") {
+          const map = /* @__PURE__ */ new Map();
+          for (const c of cloudItems) map.set(c.id, c);
+          for (const l of store.conversations || []) {
+            if (!map.has(l.id)) map.set(l.id, l);
+          }
+          store.conversations = reviveDates(Array.from(map.values()));
+        } else if (tableName === "conversationMembers") {
+          const map = /* @__PURE__ */ new Map();
+          for (const c of cloudItems) map.set(c.conversationId + "_" + c.userId, c);
+          for (const l of store.conversationMembers || []) {
+            const k = l.conversationId + "_" + l.userId;
+            if (!map.has(k)) map.set(k, l);
+          }
+          store.conversationMembers = reviveDates(Array.from(map.values()));
+        } else if (tableName === "messages") {
+          const map = /* @__PURE__ */ new Map();
+          for (const c of cloudItems) map.set(c.id, c);
+          for (const l of store.messages || []) {
+            if (!map.has(l.id)) map.set(l.id, l);
+          }
+          store.messages = reviveDates(Array.from(map.values()));
+        } else {
+          store[tableName] = reviveDates(cloudItems);
+        }
+      } catch {
+      }
+    }
+  } catch (err) {
+  }
+}
+async function flushCloudStore() {
+  if (process.env.VITEST) return;
+  if (dirtyTables.size === 0) return;
+  const tables = Array.from(dirtyTables);
+  dirtyTables.clear();
+  activeFlushPromise = (async () => {
+    try {
+      const writes = tables.map(async (tableName) => {
+        const items = store[tableName] || [];
+        const payloadJson = JSON.stringify(items);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6e3);
+        const res = await fetch(firestoreBaseUrl(CLOUD_COL, "table_" + tableName), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            fields: {
+              tableName: { stringValue: String(tableName) },
+              updatedAt: { stringValue: (/* @__PURE__ */ new Date()).toISOString() },
+              payloadJson: { stringValue: payloadJson }
+            }
+          })
+        }).finally(() => clearTimeout(timer));
+        if (!res.ok) {
+          dirtyTables.add(tableName);
+        }
+      });
+      await Promise.allSettled(writes);
+    } catch {
+      for (const t2 of tables) dirtyTables.add(t2);
+    } finally {
+      activeFlushPromise = null;
+    }
+  })();
+  await activeFlushPromise;
+}
+function persistStore(tableName) {
+  if (tableName) {
+    dirtyTables.add(tableName);
+  } else {
+    for (const t2 of STORE_TABLES) dirtyTables.add(t2);
+  }
   if (process.env.VITEST) {
     return;
   }
@@ -483,6 +626,7 @@ function matchesCondition(item, condition) {
 function getMockDb() {
   return {
     __isMock: true,
+    execute: (stmt) => Promise.resolve([{ affectedRows: 0 }]),
     select: (fields) => {
       let currentTable = null;
       let condition = null;
@@ -515,76 +659,78 @@ function getMockDb() {
           return queryBuilder;
         },
         then: (resolve, reject) => {
-          try {
-            const tableName = getTableName(currentTable);
-            let list = [...store[tableName] || []];
-            if (joins.length > 0) {
-              const joinedList = [];
-              for (const row of list) {
-                let matchAll = true;
-                const merged = { ...row };
-                for (const j of joins) {
-                  const jTableName = getTableName(j.table);
-                  const jTableRows = store[jTableName] || [];
-                  const jCond = extractCondition(j.on);
-                  const match = jTableRows.find((jRow) => {
-                    if (jCond) {
-                      const lCol = jCond.leftCol || jCond.colName;
-                      const rCol = jCond.rightCol || "id";
-                      const v1 = getItemValue(row, lCol);
-                      const v2 = getItemValue(jRow, rCol);
-                      if (v1 !== void 0 && v2 !== void 0 && v1 === v2) return true;
-                      const rev1 = getItemValue(row, rCol);
-                      const rev2 = getItemValue(jRow, lCol);
-                      if (rev1 !== void 0 && rev2 !== void 0 && rev1 === rev2) return true;
-                      if (v1 !== void 0 && jRow.id === v1) return true;
-                      if (rev1 !== void 0 && jRow.id === rev1) return true;
+          (async () => {
+            try {
+              await ensureCloudStoreHydrated();
+              const tableName = getTableName(currentTable);
+              let list = [...store[tableName] || []];
+              if (joins.length > 0) {
+                const joinedList = [];
+                for (const row of list) {
+                  let matchAll = true;
+                  const merged = { ...row };
+                  for (const j of joins) {
+                    const jTableName = getTableName(j.table);
+                    const jTableRows = store[jTableName] || [];
+                    const jCond = extractCondition(j.on);
+                    const match = jTableRows.find((jRow) => {
+                      if (jCond) {
+                        const lCol = jCond.leftCol || jCond.colName;
+                        const rCol = jCond.rightCol || "id";
+                        const v1 = getItemValue(row, lCol);
+                        const v2 = getItemValue(jRow, rCol);
+                        if (v1 !== void 0 && v2 !== void 0 && v1 === v2) return true;
+                        const rev1 = getItemValue(row, rCol);
+                        const rev2 = getItemValue(jRow, lCol);
+                        if (rev1 !== void 0 && rev2 !== void 0 && rev1 === rev2) return true;
+                        if (v1 !== void 0 && jRow.id === v1) return true;
+                        if (rev1 !== void 0 && jRow.id === rev1) return true;
+                      }
+                      return false;
+                    });
+                    if (!match) {
+                      if (!j.isLeft) {
+                        matchAll = false;
+                        break;
+                      }
+                    } else {
+                      Object.assign(merged, match);
                     }
-                    return false;
-                  });
-                  if (!match) {
-                    if (!j.isLeft) {
-                      matchAll = false;
-                      break;
-                    }
-                  } else {
-                    Object.assign(merged, match);
                   }
+                  if (matchAll) joinedList.push(merged);
                 }
-                if (matchAll) joinedList.push(merged);
+                list = joinedList;
               }
-              list = joinedList;
+              if (condition) {
+                list = list.filter((item) => matchesCondition(item, condition));
+              }
+              if (orders.length > 0) {
+                list.sort((a, b) => {
+                  const aTime = a.createdAt?.getTime?.() || a.startedAt?.getTime?.() || a.id || 0;
+                  const bTime = b.createdAt?.getTime?.() || b.startedAt?.getTime?.() || b.id || 0;
+                  return bTime - aTime;
+                });
+              }
+              if (limitNum !== null) {
+                list = list.slice(0, limitNum);
+              }
+              if (fields && typeof fields === "object" && !Array.isArray(fields)) {
+                const fieldKeys = Object.keys(fields);
+                list = list.map((item) => {
+                  const res = {};
+                  for (const k of fieldKeys) {
+                    const colSpec = fields[k];
+                    const colName = colSpec?.name || k;
+                    res[k] = getItemValue(item, colName) !== void 0 ? getItemValue(item, colName) : getItemValue(item, k);
+                  }
+                  return res;
+                });
+              }
+              return list;
+            } catch (err) {
+              throw err;
             }
-            if (condition) {
-              list = list.filter((item) => matchesCondition(item, condition));
-            }
-            if (orders.length > 0) {
-              list.sort((a, b) => {
-                const aTime = a.createdAt?.getTime?.() || a.startedAt?.getTime?.() || a.id || 0;
-                const bTime = b.createdAt?.getTime?.() || b.startedAt?.getTime?.() || b.id || 0;
-                return bTime - aTime;
-              });
-            }
-            if (limitNum !== null) {
-              list = list.slice(0, limitNum);
-            }
-            if (fields && typeof fields === "object" && !Array.isArray(fields)) {
-              const fieldKeys = Object.keys(fields);
-              list = list.map((item) => {
-                const res = {};
-                for (const k of fieldKeys) {
-                  const colSpec = fields[k];
-                  const colName = colSpec?.name || k;
-                  res[k] = getItemValue(item, colName) !== void 0 ? getItemValue(item, colName) : getItemValue(item, k);
-                }
-                return res;
-              });
-            }
-            return Promise.resolve(list).then(resolve, reject);
-          } catch (err) {
-            if (reject) return Promise.reject(err).catch(reject);
-            throw err;
-          }
+          })().then(resolve, reject);
         }
       };
       return queryBuilder;
@@ -630,20 +776,27 @@ function getMockDb() {
                 lastInsertId = newItem.id;
               }
             }
-            persistStore();
+            persistStore(tableName);
             return [{ insertId: lastInsertId }];
           };
           return {
             onDuplicateKeyUpdate: ({ set }) => {
-              return Promise.resolve(runInsert(set));
+              return {
+                then: (resolve, reject) => {
+                  (async () => {
+                    const res = runInsert(set);
+                    await flushCloudStore();
+                    return res;
+                  })().then(resolve, reject);
+                }
+              };
             },
             then: (resolve, reject) => {
-              try {
-                return Promise.resolve(runInsert()).then(resolve, reject);
-              } catch (err) {
-                if (reject) return Promise.reject(err).catch(reject);
-                throw err;
-              }
+              (async () => {
+                const res = runInsert();
+                await flushCloudStore();
+                return res;
+              })().then(resolve, reject);
             }
           };
         }
@@ -668,8 +821,11 @@ function getMockDb() {
                         affected++;
                       }
                     }
-                    persistStore();
-                    return Promise.resolve([{ affectedRows: affected }]).then(resolve, reject);
+                    persistStore(tableName);
+                    (async () => {
+                      await flushCloudStore();
+                      return [{ affectedRows: affected }];
+                    })().then(resolve, reject);
                   } catch (err) {
                     if (reject) return Promise.reject(err).catch(reject);
                     throw err;
@@ -692,27 +848,25 @@ function getMockDb() {
           store[tableName] = [];
         }
         const affected = beforeLen - store[tableName].length;
-        persistStore();
+        persistStore(tableName);
         return [{ affectedRows: affected }];
       };
       return {
         then: (resolve, reject) => {
-          try {
-            return Promise.resolve(executeDelete()).then(resolve, reject);
-          } catch (err) {
-            if (reject) return Promise.reject(err).catch(reject);
-            throw err;
-          }
+          (async () => {
+            const res = executeDelete();
+            await flushCloudStore();
+            return res;
+          })().then(resolve, reject);
         },
         where: (condition) => {
           return {
             then: (resolve, reject) => {
-              try {
-                return Promise.resolve(executeDelete(condition)).then(resolve, reject);
-              } catch (err) {
-                if (reject) return Promise.reject(err).catch(reject);
-                throw err;
-              }
+              (async () => {
+                const res = executeDelete(condition);
+                await flushCloudStore();
+                return res;
+              })().then(resolve, reject);
             }
           };
         }
