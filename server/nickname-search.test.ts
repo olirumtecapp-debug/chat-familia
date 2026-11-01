@@ -44,23 +44,23 @@ describe("Nickname and Search Universal Resolution", () => {
     expect(res.available).toBe(true);
   });
 
-  it("profile.search finds user by nickname with or without @", async () => {
+  it("profile.search finds users by nickname (with or without @), email and case-insensitively", async () => {
     const caller = appRouter.createCaller({
       user: { id: 1, name: "Murilo Silva", email: "olirumtecapp@gmail.com", role: "admin" } as any,
       req: {} as any,
       res: { cookie: () => {} } as any,
     });
 
-    // Search without @
-    const results1 = await caller.profile.search({ query: "olirumfilho" });
-    expect(results1.some((u: any) => u.name === "Filho Silva" || u.email === "filho@gmail.com")).toBe(true);
+    const byNickname = await caller.profile.search({ query: "olirumfilho" });
+    expect(byNickname.some((u: any) => u.email === "filho@gmail.com")).toBe(true);
 
-    // Search with @
-    const results2 = await caller.profile.search({ query: "@olirumfilho" });
-    expect(results2.some((u: any) => u.name === "Filho Silva" || u.email === "filho@gmail.com")).toBe(true);
+    const byNicknameWithAt = await caller.profile.search({ query: "@olirumfilho" });
+    expect(byNicknameWithAt.some((u: any) => u.email === "filho@gmail.com")).toBe(true);
 
-    // Search by partial email
-    const results3 = await caller.profile.search({ query: "esposa@gmail.com" });
-    expect(results3.some((u: any) => u.name === "Esposa Silva")).toBe(true);
+    const byEmail = await caller.profile.search({ query: "ESPOSA@GMAIL.COM" });
+    expect(byEmail.some((u: any) => u.email === "esposa@gmail.com")).toBe(true);
+
+    const byName = await caller.profile.search({ query: "FILHO" });
+    expect(byName.some((u: any) => u.email === "filho@gmail.com")).toBe(true);
   });
 });
