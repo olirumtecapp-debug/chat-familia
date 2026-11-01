@@ -7,24 +7,34 @@ import { getMockDb, resetChatStore } from "./mockDb";
 
 let database: any = null;
 let useMockFallback = false;
+const IS_PRODUCTION = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
 
 /** Lazily creates the database client or falls back to resilient store on error. */
 export async function getDb() {
   if (useMockFallback) {
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Fallback local para mockDb não é permitido no ambiente de produção.");
+    }
     return getMockDb();
   }
 
   if (!database && process.env.DATABASE_URL) {
     try {
       database = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Drizzle init failed, using resilient store:", error);
+    } catch (error: any) {
+      console.error("[Database] Drizzle init failed:", error?.message || error);
+      if (IS_PRODUCTION) {
+        throw new Error("[Database] Falha ao inicializar conexão com o banco de dados em produção: " + (error?.message || error));
+      }
       useMockFallback = true;
       return getMockDb();
     }
   }
 
   if (!database) {
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] DATABASE_URL não está configurada no ambiente de produção.");
+    }
     return getMockDb();
   }
 
@@ -33,7 +43,12 @@ export async function getDb() {
 
 export async function requireDatabase() {
   const db = await getDb();
-  if (!db) return getMockDb();
+  if (!db) {
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Banco de dados não disponível no ambiente de produção.");
+    }
+    return getMockDb();
+  }
   return db;
 }
 
@@ -43,7 +58,10 @@ export async function getUserByOpenId(openId: string) {
     const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
     return result[0];
   } catch (err: any) {
-    console.warn("[Database] getUserByOpenId query failed, falling back to mockDb:", err?.message || err);
+    console.error("[Database] getUserByOpenId query failed:", err?.message || err);
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Falha ao consultar usuário em produção: " + (err?.message || err));
+    }
     useMockFallback = true;
     const mock = getMockDb();
     const result = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
@@ -57,7 +75,10 @@ export async function getUserByEmail(email: string) {
     const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
     return result[0];
   } catch (err: any) {
-    console.warn("[Database] getUserByEmail query failed, falling back to mockDb:", err?.message || err);
+    console.error("[Database] getUserByEmail query failed:", err?.message || err);
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Falha ao consultar usuário por e-mail em produção: " + (err?.message || err));
+    }
     useMockFallback = true;
     const mock = getMockDb();
     const result = await mock.select().from(users).where(eq(users.email, email)).limit(1);
@@ -86,7 +107,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 
     await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
   } catch (err: any) {
-    console.warn("[Database] upsertUser failed, using mockDb:", err?.message || err);
+    console.error("[Database] upsertUser failed:", err?.message || err);
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Falha ao salvar usuário em produção: " + (err?.message || err));
+    }
     useMockFallback = true;
     const mock = getMockDb();
     await mock.insert(users).values(user).onDuplicateKeyUpdate({ set: { lastSignedIn: new Date() } });
@@ -164,7 +188,10 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     if (!user) throw new Error("Local user could not be created");
     return user;
   } catch (err: any) {
-    console.warn("[Database] upsertLocalUser failed, falling back to mockDb:", err?.message || err);
+    console.error("[Database] upsertLocalUser failed:", err?.message || err);
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Falha ao cadastrar/atualizar usuário local em produção: " + (err?.message || err));
+    }
     useMockFallback = true;
     const mock = getMockDb();
 

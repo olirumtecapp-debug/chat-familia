@@ -724,27 +724,42 @@ function getMockDb() {
 // server/db.ts
 var database = null;
 var useMockFallback = false;
+var IS_PRODUCTION = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
 async function getDb() {
   if (useMockFallback) {
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Fallback local para mockDb n\xE3o \xE9 permitido no ambiente de produ\xE7\xE3o.");
+    }
     return getMockDb();
   }
   if (!database && process.env.DATABASE_URL) {
     try {
       database = drizzle(process.env.DATABASE_URL);
     } catch (error) {
-      console.warn("[Database] Drizzle init failed, using resilient store:", error);
+      console.error("[Database] Drizzle init failed:", error?.message || error);
+      if (IS_PRODUCTION) {
+        throw new Error("[Database] Falha ao inicializar conex\xE3o com o banco de dados em produ\xE7\xE3o: " + (error?.message || error));
+      }
       useMockFallback = true;
       return getMockDb();
     }
   }
   if (!database) {
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] DATABASE_URL n\xE3o est\xE1 configurada no ambiente de produ\xE7\xE3o.");
+    }
     return getMockDb();
   }
   return database;
 }
 async function requireDatabase() {
   const db = await getDb();
-  if (!db) return getMockDb();
+  if (!db) {
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Banco de dados n\xE3o dispon\xEDvel no ambiente de produ\xE7\xE3o.");
+    }
+    return getMockDb();
+  }
   return db;
 }
 async function getUserByOpenId(openId) {
@@ -753,7 +768,10 @@ async function getUserByOpenId(openId) {
     const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
     return result[0];
   } catch (err) {
-    console.warn("[Database] getUserByOpenId query failed, falling back to mockDb:", err?.message || err);
+    console.error("[Database] getUserByOpenId query failed:", err?.message || err);
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Falha ao consultar usu\xE1rio em produ\xE7\xE3o: " + (err?.message || err));
+    }
     useMockFallback = true;
     const mock = getMockDb();
     const result = await mock.select().from(users).where(eq(users.openId, openId)).limit(1);
@@ -779,7 +797,10 @@ async function upsertUser(user) {
     }
     await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
   } catch (err) {
-    console.warn("[Database] upsertUser failed, using mockDb:", err?.message || err);
+    console.error("[Database] upsertUser failed:", err?.message || err);
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Falha ao salvar usu\xE1rio em produ\xE7\xE3o: " + (err?.message || err));
+    }
     useMockFallback = true;
     const mock = getMockDb();
     await mock.insert(users).values(user).onDuplicateKeyUpdate({ set: { lastSignedIn: /* @__PURE__ */ new Date() } });
@@ -847,7 +868,10 @@ async function upsertLocalUser(input) {
     if (!user) throw new Error("Local user could not be created");
     return user;
   } catch (err) {
-    console.warn("[Database] upsertLocalUser failed, falling back to mockDb:", err?.message || err);
+    console.error("[Database] upsertLocalUser failed:", err?.message || err);
+    if (IS_PRODUCTION) {
+      throw new Error("[Database] Falha ao cadastrar/atualizar usu\xE1rio local em produ\xE7\xE3o: " + (err?.message || err));
+    }
     useMockFallback = true;
     const mock = getMockDb();
     const fallbackUser = await mock.select().from(users).where(eq(users.email, email)).limit(1);
