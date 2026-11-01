@@ -729,48 +729,149 @@ var schemaEnsured = false;
 async function ensureSchema(db) {
   if (schemaEnsured || !db || typeof db.execute !== "function") return;
   schemaEnsured = true;
-  try {
-    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname varchar(64) UNIQUE;`);
-  } catch (e) {
-    if (!e?.message?.includes("Duplicate column") && !e?.message?.includes("already exists")) {
-      console.warn("[Database] ensureSchema nickname notice:", e?.message);
-    }
-  }
-  const statements = [
-    sql`CREATE TABLE IF NOT EXISTS blocked_users (
-      userId int NOT NULL,
-      blockedUserId int NOT NULL,
-      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (userId, blockedUserId)
+  const tableStatements = [
+    `CREATE TABLE IF NOT EXISTS \`users\` (
+      \`id\` int AUTO_INCREMENT NOT NULL PRIMARY KEY,
+      \`openId\` varchar(64) NOT NULL UNIQUE,
+      \`name\` varchar(120),
+      \`nickname\` varchar(64) UNIQUE,
+      \`email\` varchar(320) UNIQUE,
+      \`avatarKey\` varchar(512),
+      \`avatarUrl\` varchar(1024),
+      \`status\` varchar(280) NOT NULL DEFAULT 'Dispon\xEDvel',
+      \`lastSeen\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`loginMethod\` varchar(64),
+      \`role\` enum('user','admin') NOT NULL DEFAULT 'user',
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`lastSignedIn\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
-    sql`CREATE TABLE IF NOT EXISTS hidden_contacts (
-      userId int NOT NULL,
-      targetUserId int NOT NULL,
-      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (userId, targetUserId)
+    `CREATE TABLE IF NOT EXISTS \`conversations\` (
+      \`id\` int AUTO_INCREMENT NOT NULL PRIMARY KEY,
+      \`type\` enum('direct','group') NOT NULL DEFAULT 'direct',
+      \`directKey\` varchar(64) UNIQUE,
+      \`title\` varchar(160),
+      \`groupOwnerId\` int,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
     )`,
-    sql`CREATE TABLE IF NOT EXISTS muted_conversations (
-      userId int NOT NULL,
-      conversationId int NOT NULL,
-      mutedUntil timestamp NULL,
-      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      PRIMARY KEY (userId, conversationId)
+    `CREATE TABLE IF NOT EXISTS \`conversation_members\` (
+      \`conversationId\` int NOT NULL,
+      \`userId\` int NOT NULL,
+      \`memberRole\` enum('member','admin') NOT NULL DEFAULT 'member',
+      \`joinedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`lastReadAt\` timestamp NULL,
+      PRIMARY KEY (\`conversationId\`, \`userId\`)
     )`,
-    sql`CREATE TABLE IF NOT EXISTS message_reactions (
-      id int AUTO_INCREMENT NOT NULL PRIMARY KEY,
-      messageId int NOT NULL,
-      userId int NOT NULL,
-      emoji varchar(32) NOT NULL,
-      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE KEY message_user_reaction_idx (messageId, userId)
+    `CREATE TABLE IF NOT EXISTS \`messages\` (
+      \`id\` int AUTO_INCREMENT NOT NULL PRIMARY KEY,
+      \`conversationId\` int NOT NULL,
+      \`senderId\` int NOT NULL,
+      \`messageType\` enum('text','image','audio','file','system') NOT NULL DEFAULT 'text',
+      \`content\` text,
+      \`fileKey\` varchar(512),
+      \`fileUrl\` varchar(1024),
+      \`fileName\` varchar(255),
+      \`fileSize\` int,
+      \`mimeType\` varchar(128),
+      \`duration\` int,
+      \`replyToId\` int,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`deletedAt\` timestamp NULL
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`message_status\` (
+      \`messageId\` int NOT NULL,
+      \`userId\` int NOT NULL,
+      \`status\` enum('sent','delivered','read') NOT NULL DEFAULT 'sent',
+      \`timestamp\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`messageId\`, \`userId\`)
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`message_deletions\` (
+      \`messageId\` int NOT NULL,
+      \`userId\` int NOT NULL,
+      \`deletedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`messageId\`, \`userId\`)
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`calls\` (
+      \`id\` int AUTO_INCREMENT NOT NULL PRIMARY KEY,
+      \`conversationId\` int NOT NULL,
+      \`callerId\` int NOT NULL,
+      \`receiverId\` int NOT NULL,
+      \`type\` enum('audio','video') NOT NULL,
+      \`status\` enum('ringing','connecting','active','ended','declined','missed','failed') NOT NULL DEFAULT 'ringing',
+      \`startedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      \`answeredAt\` timestamp NULL,
+      \`endedAt\` timestamp NULL,
+      \`duration\` int NOT NULL DEFAULT 0
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`call_signals\` (
+      \`id\` int AUTO_INCREMENT NOT NULL PRIMARY KEY,
+      \`callId\` int NOT NULL,
+      \`senderId\` int NOT NULL,
+      \`receiverId\` int NOT NULL,
+      \`kind\` enum('offer','answer','candidate','hangup') NOT NULL,
+      \`payload\` text NOT NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`typing_states\` (
+      \`conversationId\` int NOT NULL,
+      \`userId\` int NOT NULL,
+      \`expiresAt\` timestamp NOT NULL,
+      \`updatedAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`conversationId\`, \`userId\`)
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`blocked_users\` (
+      \`userId\` int NOT NULL,
+      \`blockedUserId\` int NOT NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`userId\`, \`blockedUserId\`)
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`hidden_contacts\` (
+      \`userId\` int NOT NULL,
+      \`targetUserId\` int NOT NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`userId\`, \`targetUserId\`)
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`muted_conversations\` (
+      \`userId\` int NOT NULL,
+      \`conversationId\` int NOT NULL,
+      \`mutedUntil\` timestamp NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`userId\`, \`conversationId\`)
+    )`,
+    `CREATE TABLE IF NOT EXISTS \`message_reactions\` (
+      \`id\` int AUTO_INCREMENT NOT NULL PRIMARY KEY,
+      \`messageId\` int NOT NULL,
+      \`userId\` int NOT NULL,
+      \`emoji\` varchar(32) NOT NULL,
+      \`createdAt\` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY \`message_user_reaction_idx\` (\`messageId\`, \`userId\`)
     )`
   ];
-  for (const stmt of statements) {
+  for (const stmt of tableStatements) {
     try {
-      await db.execute(stmt);
+      await db.execute(sql.raw(stmt));
     } catch (e) {
-      console.warn("[Database] ensureSchema table notice:", e?.message);
+      console.warn("[Database] ensureSchema table warning:", e?.message);
     }
+  }
+  const userAlterCols = [
+    "ALTER TABLE `users` ADD COLUMN `nickname` varchar(64)",
+    "ALTER TABLE `users` ADD COLUMN `avatarKey` varchar(512)",
+    "ALTER TABLE `users` ADD COLUMN `avatarUrl` varchar(1024)",
+    "ALTER TABLE `users` ADD COLUMN `status` varchar(280) NOT NULL DEFAULT 'Dispon\xEDvel'",
+    "ALTER TABLE `users` ADD COLUMN `lastSeen` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP"
+  ];
+  for (const colSql of userAlterCols) {
+    try {
+      await db.execute(sql.raw(colSql));
+    } catch (_) {
+    }
+  }
+  try {
+    await db.execute(sql.raw("ALTER TABLE `users` ADD UNIQUE KEY `users_nickname_unique` (`nickname`)"));
+  } catch (_) {
   }
 }
 async function getDb() {
