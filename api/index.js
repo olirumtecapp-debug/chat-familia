@@ -30,7 +30,7 @@ var decodeOAuthState = (state) => {
 import { parse as parseCookieHeader2 } from "cookie";
 
 // server/db.ts
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import crypto2 from "crypto";
 
@@ -725,6 +725,54 @@ function getMockDb() {
 var database = null;
 var useMockFallback = false;
 var IS_PRODUCTION = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
+var schemaEnsured = false;
+async function ensureSchema(db) {
+  if (schemaEnsured || !db || typeof db.execute !== "function") return;
+  schemaEnsured = true;
+  try {
+    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname varchar(64) UNIQUE;`);
+  } catch (e) {
+    if (!e?.message?.includes("Duplicate column") && !e?.message?.includes("already exists")) {
+      console.warn("[Database] ensureSchema nickname notice:", e?.message);
+    }
+  }
+  const statements = [
+    sql`CREATE TABLE IF NOT EXISTS blocked_users (
+      userId int NOT NULL,
+      blockedUserId int NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (userId, blockedUserId)
+    )`,
+    sql`CREATE TABLE IF NOT EXISTS hidden_contacts (
+      userId int NOT NULL,
+      targetUserId int NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (userId, targetUserId)
+    )`,
+    sql`CREATE TABLE IF NOT EXISTS muted_conversations (
+      userId int NOT NULL,
+      conversationId int NOT NULL,
+      mutedUntil timestamp NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (userId, conversationId)
+    )`,
+    sql`CREATE TABLE IF NOT EXISTS message_reactions (
+      id int AUTO_INCREMENT NOT NULL PRIMARY KEY,
+      messageId int NOT NULL,
+      userId int NOT NULL,
+      emoji varchar(32) NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY message_user_reaction_idx (messageId, userId)
+    )`
+  ];
+  for (const stmt of statements) {
+    try {
+      await db.execute(stmt);
+    } catch (e) {
+      console.warn("[Database] ensureSchema table notice:", e?.message);
+    }
+  }
+}
 async function getDb() {
   if (useMockFallback) {
     if (IS_PRODUCTION) {
@@ -749,6 +797,10 @@ async function getDb() {
       throw new Error("[Database] DATABASE_URL n\xE3o est\xE1 configurada no ambiente de produ\xE7\xE3o.");
     }
     return getMockDb();
+  }
+  if (!schemaEnsured) {
+    await ensureSchema(database).catch(() => {
+    });
   }
   return database;
 }
@@ -1667,7 +1719,7 @@ var groupsRouter = router({
 
 // server/routers/messaging.ts
 import { TRPCError as TRPCError5 } from "@trpc/server";
-import { and as and3, desc as desc2, eq as eq4, gt as gt2, inArray as inArray3, isNull, lt, ne as ne3, sql } from "drizzle-orm";
+import { and as and3, desc as desc2, eq as eq4, gt as gt2, inArray as inArray3, isNull, lt, ne as ne3, sql as sql2 } from "drizzle-orm";
 import { z as z4 } from "zod";
 
 // server/media.ts
@@ -1846,11 +1898,11 @@ var messagingRouter = router({
     return Promise.all(memberships.map(async (conversation) => {
       const partner = await db.select({ id: users.id, name: users.name, nickname: users.nickname, email: users.email, avatarUrl: users.avatarUrl, status: users.status, lastSeen: users.lastSeen }).from(conversationMembers).innerJoin(users, eq4(conversationMembers.userId, users.id)).where(and3(eq4(conversationMembers.conversationId, conversation.id), ne3(users.id, ctx.user.id))).limit(1);
       const latest = await db.select({ id: messages.id, content: messages.content, messageType: messages.messageType, createdAt: messages.createdAt, senderId: messages.senderId, deletedAt: messages.deletedAt }).from(messages).where(eq4(messages.conversationId, conversation.id)).orderBy(desc2(messages.createdAt)).limit(1);
-      const unread = await db.select({ count: sql`count(*)` }).from(messages).where(and3(
+      const unread = await db.select({ count: sql2`count(*)` }).from(messages).where(and3(
         eq4(messages.conversationId, conversation.id),
         ne3(messages.senderId, ctx.user.id),
         isNull(messages.deletedAt),
-        conversation.lastReadAt ? gt2(messages.createdAt, conversation.lastReadAt) : sql`1 = 1`
+        conversation.lastReadAt ? gt2(messages.createdAt, conversation.lastReadAt) : sql2`1 = 1`
       ));
       let person = partner[0];
       if (!person && conversation.type === "direct") {
@@ -1942,7 +1994,7 @@ var messagingRouter = router({
     }).from(messages).innerJoin(users, eq4(messages.senderId, users.id)).leftJoin(messageDeletions, and3(eq4(messageDeletions.messageId, messages.id), eq4(messageDeletions.userId, ctx.user.id))).where(and3(
       eq4(messages.conversationId, input.conversationId),
       isNull(messageDeletions.messageId),
-      input.cursor ? lt(messages.createdAt, input.cursor) : sql`1 = 1`
+      input.cursor ? lt(messages.createdAt, input.cursor) : sql2`1 = 1`
     )).orderBy(desc2(messages.createdAt)).limit(40);
     const ids = entries.map((message) => message.id);
     const statuses = ids.length ? await db.select({ messageId: messageStatuses.messageId, status: messageStatuses.status }).from(messageStatuses).where(and3(inArray3(messageStatuses.messageId, ids), eq4(messageStatuses.userId, partnerId))) : [];
@@ -2127,7 +2179,7 @@ var messagingRouter = router({
 });
 
 // server/routers/profile.ts
-import { and as and4, desc as desc3, eq as eq5, like, ne as ne4, or as or2, sql as sql2 } from "drizzle-orm";
+import { and as and4, desc as desc3, eq as eq5, like, ne as ne4, or as or2, sql as sql3 } from "drizzle-orm";
 import { TRPCError as TRPCError6 } from "@trpc/server";
 import { z as z5 } from "zod";
 var profileInput = z5.object({
@@ -2236,9 +2288,9 @@ var profileRouter = router({
     const whereClause = rawQuery ? and4(
       ne4(users.id, ctx.user.id),
       or2(
-        like(sql2`LOWER(${users.name})`, term),
-        like(sql2`LOWER(${users.email})`, term),
-        like(sql2`LOWER(${users.nickname})`, term)
+        like(sql3`LOWER(${users.name})`, term),
+        like(sql3`LOWER(${users.email})`, term),
+        like(sql3`LOWER(${users.nickname})`, term)
       )
     ) : ne4(users.id, ctx.user.id);
     const results = await db.select({

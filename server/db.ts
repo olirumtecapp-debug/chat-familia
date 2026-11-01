@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import crypto from "crypto";
 import { InsertUser, users, conversations, conversationMembers } from "../drizzle/schema";
@@ -8,6 +8,58 @@ import { getMockDb, resetChatStore } from "./mockDb";
 let database: any = null;
 let useMockFallback = false;
 const IS_PRODUCTION = process.env.NODE_ENV === "production" || !!process.env.VERCEL;
+
+
+let schemaEnsured = false;
+async function ensureSchema(db: any) {
+  if (schemaEnsured || !db || typeof db.execute !== "function") return;
+  schemaEnsured = true;
+  try {
+    await db.execute(sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname varchar(64) UNIQUE;`);
+  } catch (e: any) {
+    if (!e?.message?.includes("Duplicate column") && !e?.message?.includes("already exists")) {
+      console.warn("[Database] ensureSchema nickname notice:", e?.message);
+    }
+  }
+
+  const statements = [
+    sql`CREATE TABLE IF NOT EXISTS blocked_users (
+      userId int NOT NULL,
+      blockedUserId int NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (userId, blockedUserId)
+    )`,
+    sql`CREATE TABLE IF NOT EXISTS hidden_contacts (
+      userId int NOT NULL,
+      targetUserId int NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (userId, targetUserId)
+    )`,
+    sql`CREATE TABLE IF NOT EXISTS muted_conversations (
+      userId int NOT NULL,
+      conversationId int NOT NULL,
+      mutedUntil timestamp NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (userId, conversationId)
+    )`,
+    sql`CREATE TABLE IF NOT EXISTS message_reactions (
+      id int AUTO_INCREMENT NOT NULL PRIMARY KEY,
+      messageId int NOT NULL,
+      userId int NOT NULL,
+      emoji varchar(32) NOT NULL,
+      createdAt timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE KEY message_user_reaction_idx (messageId, userId)
+    )`
+  ];
+
+  for (const stmt of statements) {
+    try {
+      await db.execute(stmt);
+    } catch (e: any) {
+      console.warn("[Database] ensureSchema table notice:", e?.message);
+    }
+  }
+}
 
 /** Lazily creates the database client or falls back to resilient store on error. */
 export async function getDb() {
@@ -38,6 +90,7 @@ export async function getDb() {
     return getMockDb();
   }
 
+  if (!schemaEnsured) { await ensureSchema(database).catch(() => {}); }
   return database;
 }
 
