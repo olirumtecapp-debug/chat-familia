@@ -1,3 +1,24 @@
+
+async function showSafeNotification(title: string, options?: NotificationOptions) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  try {
+    if (Notification.permission !== "granted") return;
+    if ("serviceWorker" in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && typeof reg.showNotification === "function") {
+          await reg.showNotification(title, options);
+          return;
+        }
+      } catch {}
+    }
+    // Only invoke Notification constructor if not on mobile Chrome
+    new Notification(title, options);
+  } catch (err) {
+    console.warn("[Notification] Safe fallback, ignored exception:", err);
+  }
+}
+
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
@@ -23,7 +44,7 @@ import { resolveMediaUrl } from "@shared/media";
 import { getEmojiDisplayStyle } from "@/lib/emojiUtils";
 import { EmojiPicker } from "@/components/EmojiPicker";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { UserPlus, User, AtSign, Mail, Lock, Sparkles, ShieldCheck, BellOff, Volume2, Ban, MoreVertical, AlertTriangle } from "lucide-react";
+import { UserPlus, User, AtSign, Mail, Lock, Sparkles, ShieldCheck, BellOff, Volume2, Ban, MoreVertical, AlertTriangle, Share2 } from "lucide-react";
 
 type FilePayload = { dataUrl: string; name: string; duration?: number; kind: "image" | "file" };
 type ReplyTarget = { id: number; content: string | null; senderName: string | null };
@@ -905,8 +926,10 @@ function MessageBubble({
       </div>
     );
 
-  const emojiInfo = message.content ? getEmojiDisplayStyle(message.content) : null;
-  const isJumbo = emojiInfo?.isEmojiOnly;
+  const isExplicitAnimated = Boolean(message.content?.includes("\u200B") || message.content?.trim() === "❤️");
+  const cleanContent = message.content ? message.content.replace(/\u200B/g, "") : "";
+  const emojiInfo = cleanContent ? getEmojiDisplayStyle(cleanContent) : null;
+  const isJumbo = isExplicitAnimated && emojiInfo?.isEmojiOnly;
 
   const handleTouchStart = () => {
     longPressTimer.current = setTimeout(() => {
@@ -1012,13 +1035,13 @@ function MessageBubble({
             </span>
           </a>
         )}
-        {message.content &&
+        {cleanContent &&
           (isJumbo ? (
-            <div className={`select-none text-center ${emojiInfo.sizeClass} ${emojiInfo.animClass}`}>
-              {message.content}
+            <div className={`select-none text-center ${emojiInfo?.sizeClass || "text-5xl"} ${emojiInfo?.animClass || "emoji-float-3d"}`}>
+              {cleanContent}
             </div>
           ) : (
-            <p>{linkify(message.content)}</p>
+            <p>{linkify(cleanContent)}</p>
           ))}
         <footer>
           <time>{formatTime(message.createdAt)}</time>
@@ -1406,7 +1429,7 @@ export default function Home() {
   useEffect(() => { if (selectedId) acknowledge.mutate({ conversationId: selectedId, read: true }); }, [selectedId, history.data?.messages.length]);
   useEffect(() => { if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; }, [history.data?.messages.length]);
   useEffect(() => { if (!isAuthenticated) return; const beat = () => heartbeat.mutate(); beat(); const interval = window.setInterval(beat, 30_000); return () => window.clearInterval(interval); }, [isAuthenticated]);
-  useEffect(() => { const incoming = history.data?.messages.filter(message => message.senderId !== user?.id) || []; for (const message of incoming) { if (knownIncoming.current.has(message.id)) continue; knownIncoming.current.add(message.id); if (document.hidden && Notification.permission === "granted") new Notification(selected?.participant?.name || "Nova mensagem", { body: message.messageType === "text" ? (message.content || "Nova mensagem") : "Nova mídia recebida" }); } }, [history.data, selected?.participant?.name, user?.id]);
+  useEffect(() => { const incoming = history.data?.messages.filter(message => message.senderId !== user?.id) || []; for (const message of incoming) { if (knownIncoming.current.has(message.id)) continue; knownIncoming.current.add(message.id); if (document.hidden && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") void showSafeNotification(selected?.participant?.name || "Nova mensagem", { body: message.messageType === "text" ? (message.content?.replace(/\u200B/g, '') || "Nova mensagem") : "Nova mídia recebida", icon: "/icon-192.png" }); } }, [history.data, selected?.participant?.name, user?.id]);
   useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
   useEffect(() => { if (!isAuthenticated) return; const source = new EventSource("/api/realtime"); source.onmessage = () => { utils.messaging.list.invalidate(); utils.messaging.history.invalidate(); utils.calls.pending.invalidate(); }; source.onerror = () => source.close(); return () => source.close(); }, [isAuthenticated]);
   // When selected loads, clear the pending contact info
@@ -1584,18 +1607,33 @@ export default function Home() {
       )}
 
       {sidebarTab === "contacts" && (
-        <div className="conversation-list flex-1 overflow-y-auto">
+        <div className="conversation-list flex-1 overflow-y-auto flex flex-col">
+          <div className="p-2.5 border-b border-[var(--line)] bg-[var(--surface-soft)]/60 sticky top-0 z-10 backdrop-blur-xs">
+            <button
+              type="button"
+              onClick={() => setNewChatOpen(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-[#0080EA] hover:bg-[#0060B8] active:scale-[0.98] text-white font-bold text-xs shadow-sm transition-all cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Adicionar novo contato</span>
+            </button>
+          </div>
           {allContacts.isLoading && (
             <div className="quiet-state"><Loader2 className="animate-spin" /> Carregando contatos...</div>
           )}
           {!allContacts.isLoading && !allContacts.data?.length && (
             <div className="clean-empty p-6 text-center">
               <Users className="w-10 h-10 text-slate-400 mx-auto mb-2 opacity-60" />
-              <strong className="text-sm font-semibold block mb-1 text-slate-800 dark:text-slate-200">Nenhum outro contato cadastrado</strong>
-              <span className="text-xs text-muted-foreground block mb-4">Envie o link de convite para sua esposa e filhos!</span>
-              <Button size="sm" variant="outline" onClick={() => setInviteModalOpen(true)} className="text-xs border-slate-300 dark:border-slate-700">
-                <UserPlus className="w-3.5 h-3.5 mr-1.5 text-[#0080EA]" /> Convidar família
-              </Button>
+              <strong className="text-sm font-semibold block mb-1 text-slate-800 dark:text-slate-200">Nenhum contato adicionado ainda</strong>
+              <span className="text-xs text-muted-foreground block mb-4">Adicione seus familiares buscando pelo @apelido ou e-mail!</span>
+              <div className="flex flex-col gap-2 max-w-xs mx-auto">
+                <Button size="sm" onClick={() => setNewChatOpen(true)} className="text-xs bg-[#0080EA] text-white hover:bg-[#0060B8] font-semibold">
+                  <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Adicionar pelo @apelido
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => setInviteModalOpen(true)} className="text-xs border-slate-300 dark:border-slate-700">
+                  <Share2 className="w-3.5 h-3.5 mr-1.5 text-[#0080EA]" /> Convidar família por link
+                </Button>
+              </div>
             </div>
           )}
           {/* Conversar consigo mesmo (Anotações / Mensagem para mim mesmo) */}

@@ -2474,7 +2474,7 @@ var messagingRouter = router({
 });
 
 // server/routers/profile.ts
-import { and as and4, desc as desc3, eq as eq5, like, ne as ne4, or as or2, sql as sql3 } from "drizzle-orm";
+import { and as and4, desc as desc3, eq as eq5, inArray as inArray4, like, ne as ne4, or as or2, sql as sql3 } from "drizzle-orm";
 import { TRPCError as TRPCError6 } from "@trpc/server";
 import { z as z5 } from "zod";
 var profileInput = z5.object({
@@ -2581,16 +2581,34 @@ var profileRouter = router({
   search: protectedProcedure.input(z5.object({ query: z5.string().trim().max(120).optional().default("") })).query(async ({ ctx, input }) => {
     const db = await requireDatabase();
     const rawQuery = (input.query || "").trim();
-    const cleanTerm = rawQuery.replace(/^@/, "").toLowerCase();
-    const term = `%${cleanTerm}%`;
-    const whereClause = rawQuery ? and4(
-      ne4(users.id, ctx.user.id),
-      or2(
-        like(sql3`LOWER(${users.name})`, term),
-        like(sql3`LOWER(${users.email})`, term),
-        like(sql3`LOWER(${users.nickname})`, term)
-      )
-    ) : ne4(users.id, ctx.user.id);
+    let whereClause;
+    if (rawQuery) {
+      const cleanTerm = rawQuery.replace(/^@/, "").toLowerCase();
+      const term = `%${cleanTerm}%`;
+      whereClause = and4(
+        ne4(users.id, ctx.user.id),
+        or2(
+          like(sql3`LOWER(${users.name})`, term),
+          like(sql3`LOWER(${users.email})`, term),
+          like(sql3`LOWER(${users.nickname})`, term)
+        )
+      );
+    } else {
+      const myMemberships = await db.select({ conversationId: conversationMembers.conversationId }).from(conversationMembers).where(eq5(conversationMembers.userId, ctx.user.id));
+      const myConvIds = myMemberships.map((m) => m.conversationId);
+      if (myConvIds.length === 0) {
+        return [];
+      }
+      const otherMembers = await db.select({ userId: conversationMembers.userId }).from(conversationMembers).where(and4(
+        inArray4(conversationMembers.conversationId, myConvIds),
+        ne4(conversationMembers.userId, ctx.user.id)
+      ));
+      const contactUserIds = Array.from(new Set(otherMembers.map((m) => m.userId)));
+      if (contactUserIds.length === 0) {
+        return [];
+      }
+      whereClause = inArray4(users.id, contactUserIds);
+    }
     const results = await db.select({
       id: users.id,
       name: users.name,

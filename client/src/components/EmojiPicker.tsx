@@ -105,7 +105,7 @@ export function EmojiPickerComponent({ onSelectEmoji, className = "" }: EmojiPic
               <button
                 key={item.id}
                 type="button"
-                onClick={() => onSelectEmoji(item.emoji)}
+                onClick={() => onSelectEmoji(`\u200B${item.emoji}\u200B`)}
                 className="flex flex-col items-center justify-center p-2 rounded-xl hover:bg-[var(--surface-soft)] active:scale-95 transition-all text-center group cursor-pointer border border-transparent hover:border-[var(--line)]"
                 title={item.name}
               >

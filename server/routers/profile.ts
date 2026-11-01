@@ -1,4 +1,4 @@
-import { and, desc, eq, like, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { blockedUsers, conversationMembers, conversations, hiddenContacts, users } from "../../drizzle/schema";
 import { requireDatabase } from "../db";
@@ -141,19 +141,47 @@ export const profileRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await requireDatabase();
       const rawQuery = (input.query || "").trim();
-      // Busca por nome, apelido (com ou sem @) ou e-mail, sem diferenciar maiúsculas.
-      const cleanTerm = rawQuery.replace(/^@/, "").toLowerCase();
-      const term = `%${cleanTerm}%`;
-      const whereClause: any = rawQuery
-        ? and(
-            ne(users.id, ctx.user.id),
-            or(
-              like(sql`LOWER(${users.name})`, term),
-              like(sql`LOWER(${users.email})`, term),
-              like(sql`LOWER(${users.nickname})`, term)
-            )
+      let whereClause: any;
+      if (rawQuery) {
+        // Busca ativa por nome, apelido (com ou sem @) ou e-mail, sem diferenciar maiúsculas.
+        const cleanTerm = rawQuery.replace(/^@/, "").toLowerCase();
+        const term = `%${cleanTerm}%`;
+        whereClause = and(
+          ne(users.id, ctx.user.id),
+          or(
+            like(sql`LOWER(${users.name})`, term),
+            like(sql`LOWER(${users.email})`, term),
+            like(sql`LOWER(${users.nickname})`, term)
           )
-        : ne(users.id, ctx.user.id);
+        );
+      } else {
+        // Quando a query está vazia (aba de Contatos), lista APENAS quem o usuário realmente
+        // adicionou ou com quem possui conversa ativa, e não todos os usuários do banco!
+        const myMemberships = await db
+          .select({ conversationId: conversationMembers.conversationId })
+          .from(conversationMembers)
+          .where(eq(conversationMembers.userId, ctx.user.id));
+        const myConvIds = myMemberships.map(m => m.conversationId);
+
+        if (myConvIds.length === 0) {
+          return [];
+        }
+
+        const otherMembers = await db
+          .select({ userId: conversationMembers.userId })
+          .from(conversationMembers)
+          .where(and(
+            inArray(conversationMembers.conversationId, myConvIds),
+            ne(conversationMembers.userId, ctx.user.id)
+          ));
+        const contactUserIds = Array.from(new Set(otherMembers.map(m => m.userId)));
+
+        if (contactUserIds.length === 0) {
+          return [];
+        }
+
+        whereClause = inArray(users.id, contactUserIds);
+      }
       const results = await db
         .select({
           id: users.id,
