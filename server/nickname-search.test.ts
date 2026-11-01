@@ -35,7 +35,7 @@ describe("Nickname and Search Universal Resolution", () => {
 
   it("checkNickname returns available=true if currentUserId owns the nickname", async () => {
     const caller = appRouter.createCaller({
-      user: { id: 1, name: "Murilo Silva", email: "olirumtecapp@gmail.com", role: "admin" } as any,
+      user: { id: 1, openId: "local_test_admin", name: "Murilo Silva", email: "olirumtecapp@gmail.com", role: "admin" } as any,
       req: {} as any,
       res: { cookie: () => {} } as any,
     });
