@@ -210,7 +210,157 @@ function reviveDates(obj: any): any {
   return out;
 }
 
-function persistStore() {
+
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || "expedicao-brasil";
+const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY || "AIzaSyBUHGXoUMg0bV3EdmfpfmVAEYMLQceqkQc";
+const CLOUD_COL = "chatforall_cloud_store";
+
+const STORE_TABLES = [
+  "users",
+  "conversations",
+  "conversationMembers",
+  "messages",
+  "messageStatuses",
+  "messageDeletions",
+  "calls",
+  "callSignals",
+  "typingStates",
+  "blockedUsers",
+  "mutedConversations",
+  "hiddenContacts",
+  "messageReactions",
+] as const;
+
+function firestoreBaseUrl(col: string, docId?: string) {
+  const base = "https://firestore.googleapis.com/v1/projects/" + FIREBASE_PROJECT_ID + "/databases/(default)/documents/" + col;
+  const keyParam = FIREBASE_API_KEY ? "key=" + FIREBASE_API_KEY : "";
+  if (docId) {
+    return keyParam ? base + "/" + docId + "?" + keyParam : base + "/" + docId;
+  }
+  return keyParam ? base + "?pageSize=50&" + keyParam : base + "?pageSize=50";
+}
+
+let lastHydratedAt = 0;
+const dirtyTables = new Set<string>();
+let activeFlushPromise: Promise<void> | null = null;
+
+export async function ensureCloudStoreHydrated(force = false): Promise<void> {
+  if (process.env.VITEST) return;
+  if (activeFlushPromise) {
+    try { await activeFlushPromise; } catch {}
+  }
+  if (!force && Date.now() - lastHydratedAt < 1000) return;
+  lastHydratedAt = Date.now();
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(firestoreBaseUrl(CLOUD_COL), { signal: controller.signal }).finally(() => clearTimeout(timer));
+    if (!res.ok) return;
+    const data: any = await res.json();
+    const docs: any[] = data?.documents || [];
+    if (docs.length === 0) return;
+
+    for (const doc of docs) {
+      const docName = doc?.name?.split("/").pop();
+      if (!docName || !docName.startsWith("table_")) continue;
+      const tableName = docName.replace("table_", "") as keyof ChatStore;
+      const payloadJson = doc?.fields?.payloadJson?.stringValue;
+      if (!payloadJson || dirtyTables.has(tableName)) continue;
+
+      try {
+        const cloudItems: any[] = JSON.parse(payloadJson);
+        if (!Array.isArray(cloudItems)) continue;
+
+        if (tableName === "users") {
+          const localItems = (store.users || []) as any[];
+          const map = new Map<any, any>();
+          for (const c of cloudItems) {
+            const k = c.openId || (c.email ? String(c.email).toLowerCase() : null) || c.id;
+            map.set(k, c);
+          }
+          for (const l of localItems) {
+            const k = l.openId || (l.email ? String(l.email).toLowerCase() : null) || l.id;
+            if (!map.has(k)) {
+              map.set(k, l);
+            }
+          }
+          store.users = reviveDates(Array.from(map.values()));
+        } else if (tableName === "conversations") {
+          const map = new Map<any, any>();
+          for (const c of cloudItems) map.set(c.id, c);
+          for (const l of store.conversations || []) {
+            if (!map.has(l.id)) map.set(l.id, l);
+          }
+          store.conversations = reviveDates(Array.from(map.values()));
+        } else if (tableName === "conversationMembers") {
+          const map = new Map<any, any>();
+          for (const c of cloudItems) map.set(c.conversationId + "_" + c.userId, c);
+          for (const l of store.conversationMembers || []) {
+            const k = l.conversationId + "_" + l.userId;
+            if (!map.has(k)) map.set(k, l);
+          }
+          store.conversationMembers = reviveDates(Array.from(map.values()));
+        } else if (tableName === "messages") {
+          const map = new Map<any, any>();
+          for (const c of cloudItems) map.set(c.id, c);
+          for (const l of store.messages || []) {
+            if (!map.has(l.id)) map.set(l.id, l);
+          }
+          store.messages = reviveDates(Array.from(map.values()));
+        } else {
+          (store as any)[tableName] = reviveDates(cloudItems);
+        }
+      } catch {}
+    }
+  } catch (err) {
+    // Network fallback
+  }
+}
+
+export async function flushCloudStore(): Promise<void> {
+  if (process.env.VITEST) return;
+  if (dirtyTables.size === 0) return;
+  const tables = Array.from(dirtyTables);
+  dirtyTables.clear();
+
+  activeFlushPromise = (async () => {
+    try {
+      const writes = tables.map(async (tableName) => {
+        const items = (store as any)[tableName] || [];
+        const payloadJson = JSON.stringify(items);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        const res = await fetch(firestoreBaseUrl(CLOUD_COL, "table_" + tableName), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            fields: {
+              tableName: { stringValue: String(tableName) },
+              updatedAt: { stringValue: new Date().toISOString() },
+              payloadJson: { stringValue: payloadJson },
+            },
+          }),
+        }).finally(() => clearTimeout(timer));
+
+        if (!res.ok) {
+          dirtyTables.add(tableName);
+        }
+      });
+      await Promise.allSettled(writes);
+    } catch {
+      for (const t of tables) dirtyTables.add(t);
+    } finally {
+      activeFlushPromise = null;
+    }
+  })();
+
+  await activeFlushPromise;
+}
+
+function persistStore(tableName?: string) {
+  if (tableName) { dirtyTables.add(tableName); } else { for (const t of STORE_TABLES) dirtyTables.add(t); }
   if (process.env.VITEST) {
     return; // Don't overwrite persistent file during test runs
   }
@@ -466,6 +616,7 @@ function matchesCondition(item: any, condition: any): boolean {
 export function getMockDb() {
   return {
     __isMock: true,
+    execute: (stmt?: any) => Promise.resolve([{ affectedRows: 0 }]),
     select: (fields?: any) => {
       let currentTable: any = null;
       let condition: any = null;
@@ -499,8 +650,10 @@ export function getMockDb() {
           return queryBuilder;
         },
         then: (resolve: any, reject: any) => {
-          try {
-            const tableName = getTableName(currentTable);
+          (async () => {
+            try {
+              await ensureCloudStoreHydrated();
+              const tableName = getTableName(currentTable);
             let list = [...((store[tableName] as any[]) || [])];
 
             // Handle inner and left joins if present
@@ -574,11 +727,11 @@ export function getMockDb() {
               });
             }
 
-            return Promise.resolve(list).then(resolve, reject);
-          } catch (err) {
-            if (reject) return Promise.reject(err).catch(reject);
-            throw err;
-          }
+            return list;
+            } catch (err) {
+              throw err;
+            }
+          })().then(resolve, reject);
         },
       };
       return queryBuilder;
@@ -630,21 +783,28 @@ export function getMockDb() {
               }
             }
 
-            persistStore();
+            persistStore(tableName);
             return [{ insertId: lastInsertId }];
           };
 
           return {
             onDuplicateKeyUpdate: ({ set }: { set: any }) => {
-              return Promise.resolve(runInsert(set));
+              return {
+                then: (resolve: any, reject: any) => {
+                  (async () => {
+                    const res = runInsert(set);
+                    await flushCloudStore();
+                    return res;
+                  })().then(resolve, reject);
+                },
+              };
             },
             then: (resolve: any, reject: any) => {
-              try {
-                return Promise.resolve(runInsert()).then(resolve, reject);
-              } catch (err) {
-                if (reject) return Promise.reject(err).catch(reject);
-                throw err;
-              }
+              (async () => {
+                const res = runInsert();
+                await flushCloudStore();
+                return res;
+              })().then(resolve, reject);
             },
           };
         },
@@ -672,8 +832,11 @@ export function getMockDb() {
                       }
                     }
 
-                    persistStore();
-                    return Promise.resolve([{ affectedRows: affected }]).then(resolve, reject);
+                    persistStore(tableName);
+                    (async () => {
+                      await flushCloudStore();
+                      return [{ affectedRows: affected }];
+                    })().then(resolve, reject);
                   } catch (err) {
                     if (reject) return Promise.reject(err).catch(reject);
                     throw err;
@@ -697,28 +860,26 @@ export function getMockDb() {
           (store as any)[tableName] = [];
         }
         const affected = beforeLen - (store[tableName] as any[]).length;
-        persistStore();
+        persistStore(tableName);
         return [{ affectedRows: affected }];
       };
 
       return {
         then: (resolve: any, reject: any) => {
-          try {
-            return Promise.resolve(executeDelete()).then(resolve, reject);
-          } catch (err) {
-            if (reject) return Promise.reject(err).catch(reject);
-            throw err;
-          }
+          (async () => {
+            const res = executeDelete();
+            await flushCloudStore();
+            return res;
+          })().then(resolve, reject);
         },
         where: (condition: any) => {
           return {
             then: (resolve: any, reject: any) => {
-              try {
-                return Promise.resolve(executeDelete(condition)).then(resolve, reject);
-              } catch (err) {
-                if (reject) return Promise.reject(err).catch(reject);
-                throw err;
-              }
+              (async () => {
+                const res = executeDelete(condition);
+                await flushCloudStore();
+                return res;
+              })().then(resolve, reject);
             },
           };
         },
