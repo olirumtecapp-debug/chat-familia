@@ -127,6 +127,20 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     }
 
     const openId = `local_${crypto.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    // Mantém identidade estável: o usuário deve recuperar a mesma conta ao voltar.
+    const existingByOpenId = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    if (existingByOpenId[0]) {
+      await db.update(users).set({
+        name,
+        email,
+        ...(nickname ? { nickname } : {}),
+        lastSignedIn: now,
+        lastSeen: now,
+        loginMethod: "commercial-auth",
+      }).where(eq(users.id, existingByOpenId[0].id));
+      return { ...existingByOpenId[0], name, email, ...(nickname ? { nickname } : {}), lastSignedIn: now, lastSeen: now };
+    }
+
     await db.insert(users).values({
       openId,
       name,
