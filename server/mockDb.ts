@@ -346,8 +346,12 @@ function extractCondition(cond: any): any {
     const chunk = chunks[i];
     if (chunk && chunk.queryChunks) {
       const sub = extractCondition(chunk);
-      if (sub && sub.colName) return sub;
       if (sub && (sub.type === "and" || sub.type === "or")) return sub;
+      if (sub && sub.colName && sub.targetVal !== undefined) return sub;
+      if (sub && sub.colName && !colName) {
+        colName = sub.colName;
+        leftCol = sub.colName;
+      }
     }
     if (chunk && (chunk.name || chunk.key) && typeof chunk.table !== "undefined") {
       const col = chunk.key || chunk.name;

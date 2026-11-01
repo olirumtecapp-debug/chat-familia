@@ -370,8 +370,12 @@ function extractCondition(cond) {
     const chunk = chunks[i];
     if (chunk && chunk.queryChunks) {
       const sub = extractCondition(chunk);
-      if (sub && sub.colName) return sub;
       if (sub && (sub.type === "and" || sub.type === "or")) return sub;
+      if (sub && sub.colName && sub.targetVal !== void 0) return sub;
+      if (sub && sub.colName && !colName) {
+        colName = sub.colName;
+        leftCol = sub.colName;
+      }
     }
     if (chunk && (chunk.name || chunk.key) && typeof chunk.table !== "undefined") {
       const col = chunk.key || chunk.name;
@@ -756,19 +760,6 @@ async function getUserByOpenId(openId) {
     return result[0];
   }
 }
-async function getUserByEmail(email) {
-  try {
-    const db = await getDb();
-    const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
-    return result[0];
-  } catch (err) {
-    console.warn("[Database] getUserByEmail query failed, falling back to mockDb:", err?.message || err);
-    useMockFallback = true;
-    const mock = getMockDb();
-    const result = await mock.select().from(users).where(eq(users.email, email)).limit(1);
-    return result[0];
-  }
-}
 async function upsertUser(user) {
   if (!user.openId) throw new Error("User openId is required");
   try {
@@ -807,13 +798,8 @@ async function upsertLocalUser(input) {
   const db = await getDb();
   try {
     let existing = null;
-    if (nickname) {
-      const res = await db.select().from(users).where(eq(users.nickname, nickname)).limit(1);
-      existing = res[0];
-    }
-    if (!existing) {
-      existing = await getUserByEmail(email);
-    }
+    const emailResult = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    existing = emailResult[0];
     if (existing) {
       await db.update(users).set({
         name,
@@ -827,6 +813,18 @@ async function upsertLocalUser(input) {
       return refreshed || existing;
     }
     const openId = `local_${crypto2.createHash("sha256").update(email).digest("hex").slice(0, 58)}`;
+    const existingByOpenId = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+    if (existingByOpenId[0]) {
+      await db.update(users).set({
+        name,
+        email,
+        ...nickname ? { nickname } : {},
+        lastSignedIn: now,
+        lastSeen: now,
+        loginMethod: "commercial-auth"
+      }).where(eq(users.id, existingByOpenId[0].id));
+      return { ...existingByOpenId[0], name, email, ...nickname ? { nickname } : {}, lastSignedIn: now, lastSeen: now };
+    }
     await db.insert(users).values({
       openId,
       name,
@@ -852,15 +850,8 @@ async function upsertLocalUser(input) {
     console.warn("[Database] upsertLocalUser failed, falling back to mockDb:", err?.message || err);
     useMockFallback = true;
     const mock = getMockDb();
-    let existing = null;
-    if (nickname) {
-      const res = await mock.select().from(users).where(eq(users.nickname, nickname)).limit(1);
-      existing = res[0];
-    }
-    if (!existing) {
-      const res = await mock.select().from(users).where(eq(users.email, email)).limit(1);
-      existing = res[0];
-    }
+    const fallbackUser = await mock.select().from(users).where(eq(users.email, email)).limit(1);
+    let existing = fallbackUser[0];
     if (existing) {
       await mock.update(users).set({
         name,
@@ -2112,7 +2103,7 @@ var messagingRouter = router({
 });
 
 // server/routers/profile.ts
-import { and as and4, desc as desc3, eq as eq5, like, ne as ne4, or as or2 } from "drizzle-orm";
+import { and as and4, desc as desc3, eq as eq5, like, ne as ne4, or as or2, sql as sql2 } from "drizzle-orm";
 import { TRPCError as TRPCError6 } from "@trpc/server";
 import { z as z5 } from "zod";
 var profileInput = z5.object({
@@ -2216,21 +2207,16 @@ var profileRouter = router({
   search: protectedProcedure.input(z5.object({ query: z5.string().trim().max(120).optional().default("") })).query(async ({ ctx, input }) => {
     const db = await requireDatabase();
     const rawQuery = (input.query || "").trim();
-    let whereClause = ne4(users.id, ctx.user.id);
-    if (rawQuery.length > 0) {
-      const cleanTerm = rawQuery.replace(/^@/, "");
-      const term = `%${cleanTerm}%`;
-      const rawTerm = `%${rawQuery}%`;
-      whereClause = and4(
-        ne4(users.id, ctx.user.id),
-        or2(
-          like(users.name, term),
-          like(users.email, term),
-          like(users.nickname, term),
-          like(users.nickname, rawTerm)
-        )
-      );
-    }
+    const cleanTerm = rawQuery.replace(/^@/, "").toLowerCase();
+    const term = `%${cleanTerm}%`;
+    const whereClause = rawQuery ? and4(
+      ne4(users.id, ctx.user.id),
+      or2(
+        like(sql2`LOWER(${users.name})`, term),
+        like(sql2`LOWER(${users.email})`, term),
+        like(sql2`LOWER(${users.nickname})`, term)
+      )
+    ) : ne4(users.id, ctx.user.id);
     const results = await db.select({
       id: users.id,
       name: users.name,
