@@ -1,4 +1,4 @@
-import { and, desc, eq, like, ne, or } from "drizzle-orm";
+import { and, desc, eq, like, ne, or, sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { blockedUsers, conversationMembers, conversations, hiddenContacts, users } from "../../drizzle/schema";
 import { requireDatabase } from "../db";
@@ -138,21 +138,19 @@ export const profileRouter = router({
     .query(async ({ ctx, input }) => {
       const db = await requireDatabase();
       const rawQuery = (input.query || "").trim();
-      let whereClause: any = ne(users.id, ctx.user.id);
-      if (rawQuery.length > 0) {
-        const cleanTerm = rawQuery.replace(/^@/, "");
-        const term = `%${cleanTerm}%`;
-        const rawTerm = `%${rawQuery}%`;
-        whereClause = and(
-          ne(users.id, ctx.user.id),
-          or(
-            like(users.name, term),
-            like(users.email, term),
-            like(users.nickname, term),
-            like(users.nickname, rawTerm)
+      // Busca por nome, apelido (com ou sem @) ou e-mail, sem diferenciar maiúsculas.
+      const cleanTerm = rawQuery.replace(/^@/, "").toLowerCase();
+      const term = `%${cleanTerm}%`;
+      const whereClause: any = rawQuery
+        ? and(
+            ne(users.id, ctx.user.id),
+            or(
+              like(sql`LOWER(${users.name})`, term),
+              like(sql`LOWER(${users.email})`, term),
+              like(sql`LOWER(${users.nickname})`, term)
+            )
           )
-        );
-      }
+        : ne(users.id, ctx.user.id);
       const results = await db
         .select({
           id: users.id,
