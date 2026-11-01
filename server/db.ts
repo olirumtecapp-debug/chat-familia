@@ -168,15 +168,9 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
     useMockFallback = true;
     const mock = getMockDb();
 
-    let existing: any = null;
-    if (nickname) {
-      const res = await mock.select().from(users).where(eq(users.nickname as any, nickname)).limit(1);
-      existing = res[0];
-    }
-    if (!existing) {
-      const res = await mock.select().from(users).where(eq(users.email, email)).limit(1);
-      existing = res[0];
-    }
+    // O fallback local mantém a mesma regra do banco principal: conta é identificada pelo e-mail.
+    const fallbackUser = await mock.select().from(users).where(eq(users.email, email)).limit(1);
+    let existing: any = fallbackUser[0];
 
     if (existing) {
       await (mock.update(users).set({
