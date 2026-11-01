@@ -695,18 +695,21 @@ function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpen
   const [title, setTitle] = useState("");
   const [selectedPeople, setSelectedPeople] = useState<number[]>([]);
 
-  // Automatically fetch contacts when dialog is open without requiring text query
-  const search = trpc.profile.search.useQuery({ query: query.trim() }, { enabled: open });
+  // Lista todos os familiares ao abrir e filtra pelo nome, apelido ou e-mail.
+  const search = trpc.profile.search.useQuery(
+    { query: query.trim() },
+    { enabled: open, refetchOnWindowFocus: false }
+  );
 
   const create = trpc.messaging.createDirect.useMutation({
     onSuccess: (result, variables) => {
-      const contact = search.data?.find(p => p.id === variables.userId);
+      const contact = search.data?.find(person => person.id === variables.userId);
       utils.messaging.list.invalidate();
       onChoose(result.conversationId, contact?.name ?? undefined);
       onOpenChange(false);
       setQuery("");
     },
-    onError: error => toast.error(error.message),
+    onError: error => toast.error(error.message || "Não foi possível iniciar a conversa."),
   });
 
   const createGroup = trpc.groups.create.useMutation({
@@ -731,7 +734,7 @@ function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpen
             {groupMode ? "Criar novo grupo" : "Nova conversa"}
           </DialogTitle>
           <DialogDescription className="text-xs text-[var(--muted)]">
-            {groupMode ? "Escolha as pessoas da família e dê um nome ao grupo." : "Localize familiares por nome, @apelido ou e-mail para conversar."}
+            {groupMode ? "Escolha as pessoas da família e dê um nome ao grupo." : "Digite o nome, o apelido ou o e-mail de quem você quer chamar."}
           </DialogDescription>
         </DialogHeader>
 
@@ -792,7 +795,7 @@ function NewChatDialog({ open, onOpenChange, onChoose }: { open: boolean; onOpen
           {!search.isLoading && !search.data?.length && (
             <div className="quiet-state py-8 text-center text-xs text-[var(--muted)]">
               <Users className="w-8 h-8 mx-auto mb-2 text-slate-400 opacity-60" />
-              Nenhum contato encontrado com "{query}".
+              Ninguém encontrado. Confira o nome, apelido ou e-mail.
             </div>
           )}
 
