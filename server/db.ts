@@ -192,7 +192,7 @@ export async function getDb() {
     return getMockDb();
   }
 
-  if (!schemaEnsured) { await ensureSchema(database).catch(() => {}); }
+  if (!schemaEnsured) { await ensureSchema(database); }
   return database;
 }
 
@@ -345,7 +345,7 @@ export async function upsertLocalUser(input: { name: string; email: string; nick
   } catch (err: any) {
     console.error("[Database] upsertLocalUser failed:", err?.message || err);
     if (IS_PRODUCTION) {
-      throw new Error("[Database] Falha ao cadastrar/atualizar usuário local em produção: " + (err?.message || err));
+      const detail = err?.cause?.message || err?.sqlMessage || err?.message || String(err); throw new Error("[Database] Falha em produção: " + detail);
     }
     useMockFallback = true;
     const mock = getMockDb();

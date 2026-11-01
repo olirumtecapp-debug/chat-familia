@@ -900,8 +900,7 @@ async function getDb() {
     return getMockDb();
   }
   if (!schemaEnsured) {
-    await ensureSchema(database).catch(() => {
-    });
+    await ensureSchema(database);
   }
   return database;
 }
@@ -1023,7 +1022,8 @@ async function upsertLocalUser(input) {
   } catch (err) {
     console.error("[Database] upsertLocalUser failed:", err?.message || err);
     if (IS_PRODUCTION) {
-      throw new Error("[Database] Falha ao cadastrar/atualizar usu\xE1rio local em produ\xE7\xE3o: " + (err?.message || err));
+      const detail = err?.cause?.message || err?.sqlMessage || err?.message || String(err);
+      throw new Error("[Database] Falha em produ\xE7\xE3o: " + detail);
     }
     useMockFallback = true;
     const mock = getMockDb();
