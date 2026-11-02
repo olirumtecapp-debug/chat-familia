@@ -4,6 +4,7 @@ import { Loader2, Mic, MicOff, PhoneOff, Video, VideoOff } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { startCallRingtone } from "@/lib/sounds";
 
 type ActiveCall = {
   id: number; callerId: number; receiverId: number; callerName?: string | null; callerAvatar?: string | null;
@@ -42,8 +43,25 @@ export function CallDialog({ call, currentUserId, onFinished }: { call: ActiveCa
   const activeCallId = useRef<number | null>(null);
   const isCaller = call?.callerId === currentUserId;
   const isReceiver = call?.receiverId === currentUserId;
+  const stopRingRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (call?.status === "ringing") {
+      stopRingRef.current?.();
+      stopRingRef.current = startCallRingtone(isCaller ? "outgoing" : "incoming");
+    } else {
+      stopRingRef.current?.();
+      stopRingRef.current = null;
+    }
+    return () => {
+      stopRingRef.current?.();
+      stopRingRef.current = null;
+    };
+  }, [call?.status, isCaller]);
 
   const cleanup = useCallback(() => {
+    stopRingRef.current?.();
+    stopRingRef.current = null;
     pc.current?.close();
     pc.current = null;
     stream.current?.getTracks().forEach(track => track.stop());

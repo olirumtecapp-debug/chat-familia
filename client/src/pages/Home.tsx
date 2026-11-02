@@ -35,6 +35,7 @@ import { InstallAppModal } from "@/components/InstallAppModal";
 import { DownloadApkModal } from "@/components/DownloadApkModal";
 import { InviteModal } from "@/components/InviteModal";
 import { usePwaInstall } from "@/hooks/usePwaInstall";
+import { playMessageReceivedSound, playMessageSentSound } from "@/lib/sounds";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -472,11 +473,13 @@ function CameraModal({
   open,
   onOpenChange,
   onCapture,
+  onGallery,
   title = "Tirar Foto / Selfie",
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCapture: (dataUrl: string) => void;
+  onGallery?: () => void;
   title?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -610,10 +613,11 @@ function CameraModal({
           )}
         </div>
 
-        <div className="flex items-center justify-between gap-3 mt-4">
+        <div className="flex items-center justify-between gap-2 mt-4">
           <Button
             type="button"
             variant="ghost"
+            size="sm"
             onClick={() => {
               stopStream();
               onOpenChange(false);
@@ -622,15 +626,35 @@ function CameraModal({
             Cancelar
           </Button>
 
-          {hasCamera && !errorMsg && (
-            <Button
-              type="button"
-              onClick={capturePhoto}
-              className="bg-[#0080EA] hover:bg-[#0070CE] text-white font-medium px-6 rounded-xl flex items-center gap-2 shadow-md cursor-pointer"
-            >
-              <Camera className="w-4 h-4" /> Capturar Foto
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {onGallery && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  stopStream();
+                  onOpenChange(false);
+                  onGallery();
+                }}
+                className="border-[var(--line)] hover:bg-[var(--surface-soft)] text-[var(--ink)] font-medium flex items-center gap-1.5 cursor-pointer"
+                title="Escolher foto da Galeria"
+              >
+                <ImagePlus className="w-4 h-4 text-[#0080EA]" /> Galeria
+              </Button>
+            )}
+
+            {hasCamera && !errorMsg && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={capturePhoto}
+                className="bg-[#0080EA] hover:bg-[#0070CE] text-white font-medium px-5 rounded-xl flex items-center gap-2 shadow-md cursor-pointer"
+              >
+                <Camera className="w-4 h-4" /> Capturar Foto
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>
@@ -1641,7 +1665,7 @@ export default function Home() {
   const [olderMessages, setOlderMessages] = useState<any[]>([]); const [nextOlderCursor, setNextOlderCursor] = useState<Date | null>(null);
   const [recording, setRecording] = useState(false); const [recordingTime, setRecordingTime] = useState(0); const recorder = useRef<MediaRecorder | null>(null); const chunks = useRef<Blob[]>([]); const timer = useRef<number | null>(null); const recordingTimeRef = useRef(0); const recordGesture = useRef(false); const recordPointerType = useRef<string | null>(null);
   const imageInput = useRef<HTMLInputElement>(null); const scroll = useRef<HTMLDivElement>(null); const knownIncoming = useRef(new Set<number>());
-  const send = trpc.messaging.send.useMutation({ onSuccess: () => { setComposer(""); setReply(null); setImage(null); utils.messaging.history.invalidate(); utils.messaging.list.invalidate(); }, onError: error => toast.error(error.message) });
+  const send = trpc.messaging.send.useMutation({ onSuccess: () => { playMessageSentSound(); setComposer(""); setReply(null); setImage(null); utils.messaging.history.invalidate(); utils.messaging.list.invalidate(); }, onError: error => toast.error(error.message) });
   const setTyping = trpc.messaging.setTyping.useMutation();
   const resetData = (trpc.auth as any).resetAllData.useMutation({
     onSuccess: () => {
@@ -1658,7 +1682,58 @@ export default function Home() {
   useEffect(() => { if (selectedId) acknowledge.mutate({ conversationId: selectedId, read: true }); }, [selectedId, history.data?.messages.length]);
   useEffect(() => { if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight; }, [history.data?.messages.length]);
   useEffect(() => { if (!isAuthenticated) return; const beat = () => heartbeat.mutate(); beat(); const interval = window.setInterval(beat, 30_000); return () => window.clearInterval(interval); }, [isAuthenticated]);
-  useEffect(() => { const incoming = history.data?.messages.filter(message => message.senderId !== user?.id) || []; for (const message of incoming) { if (knownIncoming.current.has(message.id)) continue; knownIncoming.current.add(message.id); if (document.hidden && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") void showSafeNotification(selected?.participant?.name || "Nova mensagem", { body: message.messageType === "text" ? (message.content?.replace(/\u200B/g, '') || "Nova mensagem") : "Nova mídia recebida", icon: "/icon-192.png" }); } }, [history.data, selected?.participant?.name, user?.id]);
+  useEffect(() => {
+    const incoming = history.data?.messages.filter(message => message.senderId !== user?.id) || [];
+    let hasNew = false;
+    for (const message of incoming) {
+      if (knownIncoming.current.has(message.id)) continue;
+      knownIncoming.current.add(message.id);
+      hasNew = true;
+      if (document.hidden && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        void showSafeNotification(selected?.participant?.name || "Nova mensagem", {
+          body: message.messageType === "text" ? (message.content?.replace(/\u200B/g, '') || "Nova mensagem") : "Nova foto / mídia recebida",
+          icon: "/icon-192.png"
+        });
+      }
+    }
+    if (hasNew) {
+      playMessageReceivedSound();
+    }
+  }, [history.data, selected?.participant?.name, user?.id]);
+
+  useEffect(() => {
+    if (!conversations.data) return;
+    let hasNewOther = false;
+    for (const conv of conversations.data) {
+      const lm = conv.latestMessage;
+      if (lm && lm.senderId !== user?.id && !knownIncoming.current.has(lm.id)) {
+        knownIncoming.current.add(lm.id);
+        hasNewOther = true;
+        const senderTitle = conv.participant?.name || conv.title || "Nova mensagem";
+        const bodyText = lm.messageType === "text" ? (lm.content?.replace(/\u200B/g, '') || "Nova mensagem") : "Nova foto / mídia";
+        if (document.hidden && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+          void showSafeNotification(senderTitle, {
+            body: bodyText,
+            icon: "/icon-192.png"
+          });
+        }
+      }
+    }
+    if (hasNewOther) {
+      playMessageReceivedSound();
+    }
+  }, [conversations.data, user?.id]);
+
+  useEffect(() => {
+    if (pendingCall.data && pendingCall.data.callerId !== user?.id && pendingCall.data.status === "ringing") {
+      if (document.hidden && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        void showSafeNotification("Chamada recebida", {
+          body: `${pendingCall.data.callerName || "Contato"} está ligando para você...`,
+          icon: "/icon-192.png"
+        });
+      }
+    }
+  }, [pendingCall.data, user?.id]);
   useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
   useEffect(() => { if (!isAuthenticated) return; const source = new EventSource("/api/realtime"); source.onmessage = () => { utils.messaging.list.invalidate(); utils.messaging.history.invalidate(); utils.calls.pending.invalidate(); }; source.onerror = () => source.close(); return () => source.close(); }, [isAuthenticated]);
   // When selected loads, clear the pending contact info
@@ -2046,8 +2121,7 @@ export default function Home() {
   }}
 />
 <button type="button" aria-label="Tirar foto ou selfie" onClick={() => setChatCameraOpen(true)} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0" title="Tirar foto ou selfie"><Camera className="w-5 h-5" /></button>
-<button type="button" aria-label="Anexar imagem, gif ou documento" onClick={() => imageInput.current?.click()} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0" title="Anexar arquivo ou galeria"><Paperclip className="w-5 h-5" /></button>
-<input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} />
+<input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif" hidden onChange={event => prepareImage(event.target.files?.[0])} />
 <button type="button" aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0"><Mic className="w-5 h-5" /></button>
 <button
   type="button"
@@ -2087,7 +2161,7 @@ export default function Home() {
 </button></div>}</div>
     </>}</main>
     <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} />
-<CameraModal open={chatCameraOpen} onOpenChange={setChatCameraOpen} onCapture={dataUrl => setImage({ dataUrl, name: "selfie.jpg", kind: "image" })} title="Tirar foto ou selfie" /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><ContactActionModal target={contextTarget} onClose={() => setContextTarget(null)} onDeleted={() => setSelectedId(null)} />
+<CameraModal open={chatCameraOpen} onOpenChange={setChatCameraOpen} onCapture={dataUrl => setImage({ dataUrl, name: "selfie.jpg", kind: "image" })} onGallery={() => imageInput.current?.click()} title="Tirar foto ou selfie" /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><ContactActionModal target={contextTarget} onClose={() => setContextTarget(null)} onDeleted={() => setSelectedId(null)} />
     <GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />
     <CallDialog call={pendingCall.data && ["ringing", "connecting", "active"].includes(pendingCall.data.status) ? pendingCall.data as any : null} currentUserId={user?.id} onFinished={() => pendingCall.refetch()} />
     <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
