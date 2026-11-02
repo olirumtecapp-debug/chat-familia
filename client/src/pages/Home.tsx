@@ -26,7 +26,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft, Bell, Camera, Check, CheckCheck, ChevronLeft, CircleUserRound, Copy, Download, FileText, ImagePlus,
   Info, Loader2, LogOut, Menu, MessageCircle, MessageCircleMore, MessageSquarePlus, Mic, Moon, MoreHorizontal, Paperclip,
-  Phone, Plus, Search, SendHorizonal, Smartphone, Smile, Sun, Trash2, UserRoundPlus, Users, Video, X,
+  Phone, Plus, Search, SendHorizonal, Smartphone, Smile, Sun, SwitchCamera, Trash2, UserRoundPlus, Users, Video, X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -83,20 +83,62 @@ function readFile(file: File) {
   });
 }
 
-async function compressImage(file: File, maxSide: number) {
-  const original = await readFile(file);
-  const image = new Image();
-  image.src = original;
-  await image.decode();
-  const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
-  if (scale === 1 && file.size < 1_500_000) return original;
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(image.width * scale));
-  canvas.height = Math.max(1, Math.round(image.height * scale));
-  const context = canvas.getContext("2d");
-  if (!context) return original;
-  context.drawImage(image, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/webp", 0.84);
+async function compressImage(file: File, maxSide = 1280): Promise<string> {
+  // Method 1: native createImageBitmap with browser-level resizing (zero V8 heap duplication)
+  if (typeof createImageBitmap !== "undefined") {
+    try {
+      const bmp = await createImageBitmap(file);
+      const width = bmp.width;
+      const height = bmp.height;
+      const scale = Math.min(1, maxSide / Math.max(width, height));
+      const targetWidth = Math.max(1, Math.round(width * scale));
+      const targetHeight = Math.max(1, Math.round(height * scale));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const context = canvas.getContext("2d");
+      if (context) {
+        context.drawImage(bmp, 0, 0, targetWidth, targetHeight);
+        bmp.close();
+        return canvas.toDataURL("image/jpeg", 0.82);
+      }
+      bmp.close();
+    } catch {
+      // Fallback below
+    }
+  }
+
+  // Method 2: Blob URL (zero V8 memory duplication compared to FileReader Base64)
+  return new Promise<string>((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) {
+          URL.revokeObjectURL(objectUrl);
+          return readFile(file).then(resolve).catch(reject);
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+        URL.revokeObjectURL(objectUrl);
+        resolve(dataUrl);
+      } catch (err) {
+        URL.revokeObjectURL(objectUrl);
+        reject(err);
+      }
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      readFile(file).then(resolve).catch(reject);
+    };
+    image.src = objectUrl;
+  });
 }
 
 function linkify(text: string) {
@@ -425,6 +467,176 @@ function Onboarding({ onDone }: { onDone: () => void }) {
   </section></main>;
 }
 
+
+function CameraModal({
+  open,
+  onOpenChange,
+  onCapture,
+  title = "Tirar Foto / Selfie",
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCapture: (dataUrl: string) => void;
+  title?: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("user");
+  const [hasCamera, setHasCamera] = useState<boolean | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const stopStream = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const startCamera = async (mode: "user" | "environment") => {
+    stopStream();
+    setErrorMsg(null);
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error("Câmera não suportada neste navegador.");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: mode,
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
+      setHasCamera(true);
+    } catch (err: any) {
+      console.warn("Erro ao acessar câmera:", err);
+      setHasCamera(false);
+      setErrorMsg(
+        err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError"
+          ? "Permissão da câmera negada. Habilite o acesso nas configurações do navegador."
+          : "Não foi possível acessar a câmera do aparelho."
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      startCamera(facingMode);
+    } else {
+      stopStream();
+    }
+    return () => {
+      stopStream();
+    };
+  }, [open, facingMode]);
+
+  const toggleFacingMode = () => {
+    const nextMode = facingMode === "user" ? "environment" : "user";
+    setFacingMode(nextMode);
+  };
+
+  const capturePhoto = () => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const width = video.videoWidth || 640;
+    const height = video.videoHeight || 480;
+    const maxSide = 1280;
+    const scale = Math.min(1, maxSide / Math.max(width, height));
+    const targetW = Math.max(1, Math.round(width * scale));
+    const targetH = Math.max(1, Math.round(height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = targetW;
+    canvas.height = targetH;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Se câmera frontal, espelha para ficar como selfie natural
+    if (facingMode === "user") {
+      ctx.translate(targetW, 0);
+      ctx.scale(-1, 1);
+    }
+    ctx.drawImage(video, 0, 0, targetW, targetH);
+
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.82);
+    stopStream();
+    onOpenChange(false);
+    onCapture(dataUrl);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={value => { if (!value) stopStream(); onOpenChange(value); }}>
+      <DialogContent className="sm:max-w-md bg-[var(--surface)] border border-[var(--line)] text-[var(--ink)] shadow-2xl rounded-3xl p-5">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+            <Camera className="w-5 h-5 text-[#0080EA]" /> {title}
+          </DialogTitle>
+          <DialogDescription className="text-xs text-[var(--muted)]">
+            Posicione a câmera e toque no botão abaixo para capturar sua foto.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="relative mt-2 rounded-2xl overflow-hidden bg-black aspect-[4/3] flex items-center justify-center">
+          {errorMsg ? (
+            <div className="p-4 text-center text-sm text-red-400">
+              <p>{errorMsg}</p>
+            </div>
+          ) : (
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className={cn("w-full h-full object-cover", facingMode === "user" && "scale-x-[-1]")}
+            />
+          )}
+
+          {hasCamera && !errorMsg && (
+            <button
+              type="button"
+              onClick={toggleFacingMode}
+              title="Alternar câmera frontal / traseira"
+              aria-label="Alternar câmera"
+              className="absolute top-3 right-3 p-2.5 rounded-full bg-black/60 text-white backdrop-blur-md hover:bg-black/80 transition-colors shadow-lg cursor-pointer"
+            >
+              <SwitchCamera className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 mt-4">
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              stopStream();
+              onOpenChange(false);
+            }}
+          >
+            Cancelar
+          </Button>
+
+          {hasCamera && !errorMsg && (
+            <Button
+              type="button"
+              onClick={capturePhoto}
+              className="bg-[#0080EA] hover:bg-[#0070CE] text-white font-medium px-6 rounded-xl flex items-center gap-2 shadow-md cursor-pointer"
+            >
+              <Camera className="w-4 h-4" /> Capturar Foto
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenChange: (value: boolean) => void; profile: any }) {
   const utils = trpc.useUtils();
   const update = trpc.profile.update.useMutation({
@@ -462,6 +674,7 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
 
   const checkNick = trpc.auth.checkNickname.useMutation();
   const fileRef = useRef<HTMLInputElement>(null);
+  const [profileCameraOpen, setProfileCameraOpen] = useState(false);
 
   useEffect(() => {
     setName(profile?.name || "");
@@ -540,11 +753,21 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
             type="button"
             variant="outline"
             size="sm"
+            onClick={() => setProfileCameraOpen(true)}
+            disabled={avatar.isPending}
+            className="flex-1 border-[var(--line)] hover:bg-[var(--surface-soft)] text-[var(--ink)] font-medium"
+          >
+            <Camera className="w-4 h-4 mr-1.5 text-[#0080EA]" /> Tirar Selfie
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={() => fileRef.current?.click()}
             disabled={avatar.isPending}
             className="flex-1 border-[var(--line)] hover:bg-[var(--surface-soft)] text-[var(--ink)] font-medium"
           >
-            <Camera className="w-4 h-4 mr-1.5 text-[#0080EA]" /> Alterar foto
+            <ImagePlus className="w-4 h-4 mr-1.5 text-[#0080EA]" /> Galeria
           </Button>
           {profile?.avatarUrl && (
             <Button
@@ -553,20 +776,26 @@ function ProfileDialog({ open, onOpenChange, profile }: { open: boolean; onOpenC
               size="sm"
               onClick={() => removeAvatar.mutate()}
               disabled={removeAvatar.isPending}
-              className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+              className="text-red-500 hover:text-red-600 hover:bg-red-500/10 px-2.5"
+              title="Remover foto"
             >
-              <Trash2 className="w-4 h-4 mr-1.5" /> Remover
+              <Trash2 className="w-4 h-4" />
             </Button>
           )}
           <input
             ref={fileRef}
             type="file"
             accept="image/jpeg,image/png,image/webp,image/gif"
-            capture="user"
             hidden
             onChange={event => upload(event.target.files?.[0])}
           />
         </div>
+        <CameraModal
+          open={profileCameraOpen}
+          onOpenChange={setProfileCameraOpen}
+          onCapture={dataUrl => avatar.mutate({ dataUrl, name: "avatar.jpg" })}
+          title="Tirar foto de perfil (Selfie)"
+        />
 
         <form
           className="space-y-3 pt-2"
@@ -1408,7 +1637,7 @@ export default function Home() {
   const acknowledge = trpc.messaging.acknowledge.useMutation(); const deleteMe = trpc.messaging.deleteForMe.useMutation(); const deleteAll = trpc.messaging.deleteForEveryone.useMutation(); const react = trpc.messaging.react.useMutation({ onSuccess: () => utils.messaging.history.invalidate() });
   const heartbeat = trpc.profile.heartbeat.useMutation(); const startCall = trpc.calls.start.useMutation({ onError: error => toast.error(error.message) });
   const pendingCall = trpc.calls.pending.useQuery(undefined, { enabled: isAuthenticated, refetchInterval: 1_500 });
-  const [composer, setComposer] = useState(""); const [reply, setReply] = useState<ReplyTarget | null>(null); const [image, setImage] = useState<FilePayload | null>(null);
+  const [composer, setComposer] = useState(""); const [reply, setReply] = useState<ReplyTarget | null>(null); const [image, setImage] = useState<FilePayload | null>(null); const [chatCameraOpen, setChatCameraOpen] = useState(false);
   const [olderMessages, setOlderMessages] = useState<any[]>([]); const [nextOlderCursor, setNextOlderCursor] = useState<Date | null>(null);
   const [recording, setRecording] = useState(false); const [recordingTime, setRecordingTime] = useState(0); const recorder = useRef<MediaRecorder | null>(null); const chunks = useRef<Blob[]>([]); const timer = useRef<number | null>(null); const recordingTimeRef = useRef(0); const recordGesture = useRef(false); const recordPointerType = useRef<string | null>(null);
   const imageInput = useRef<HTMLInputElement>(null); const scroll = useRef<HTMLDivElement>(null); const knownIncoming = useRef(new Set<number>());
@@ -1448,7 +1677,7 @@ export default function Home() {
     const isDocument = ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/zip", "text/plain", "text/csv"].includes(file.type);
     if (!isImage && !isDocument) return toast.error("Formato não permitido. Use imagem, GIF, PDF, DOC, DOCX, ZIP ou texto.");
     try {
-      const dataUrl = isGif ? await readFile(file) : (isImage ? await compressImage(file, 1600) : await readFile(file));
+      const dataUrl = isGif ? await readFile(file) : (isImage ? await compressImage(file, 1280) : await readFile(file));
       setImage({ dataUrl, name: file.name, kind: isImage ? "image" : "file" });
     } catch {
       toast.error("Não foi possível preparar o arquivo.");
@@ -1816,7 +2045,8 @@ export default function Home() {
     }
   }}
 />
-<button type="button" aria-label="Anexar imagem, gif ou documento" onClick={() => imageInput.current?.click()} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0"><Paperclip className="w-5 h-5" /></button>
+<button type="button" aria-label="Tirar foto ou selfie" onClick={() => setChatCameraOpen(true)} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0" title="Tirar foto ou selfie"><Camera className="w-5 h-5" /></button>
+<button type="button" aria-label="Anexar imagem, gif ou documento" onClick={() => imageInput.current?.click()} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0" title="Anexar arquivo ou galeria"><Paperclip className="w-5 h-5" /></button>
 <input ref={imageInput} type="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip,text/plain,text/csv" hidden onChange={event => prepareImage(event.target.files?.[0])} />
 <button type="button" aria-label="Gravar mensagem de voz" onPointerDown={event => { recordPointerType.current = event.pointerType; if (event.pointerType === "mouse") void startRecord(); }} onPointerUp={event => { if (event.pointerType === "mouse") stopRecord(false); }} onPointerLeave={event => { if (event.pointerType === "mouse" && recording) stopRecord(true); }} onClick={() => { if (recordPointerType.current !== "mouse") { if (recording) stopRecord(false); else void startRecord(); } recordPointerType.current = null; }} onKeyDown={event => { if (event.key === " ") { event.preventDefault(); void startRecord(); } }} onKeyUp={event => { if (event.key === " ") stopRecord(false); }} className="p-2 text-slate-700 dark:text-slate-200 hover:text-[#0080EA] dark:hover:text-[#38BDF8] transition-colors shrink-0"><Mic className="w-5 h-5" /></button>
 <button
@@ -1856,7 +2086,8 @@ export default function Home() {
   )}
 </button></div>}</div>
     </>}</main>
-    <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><ContactActionModal target={contextTarget} onClose={() => setContextTarget(null)} onDeleted={() => setSelectedId(null)} />
+    <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} profile={profile.data} />
+<CameraModal open={chatCameraOpen} onOpenChange={setChatCameraOpen} onCapture={dataUrl => setImage({ dataUrl, name: "selfie.jpg", kind: "image" })} title="Tirar foto ou selfie" /><NewChatDialog open={newChatOpen} onOpenChange={setNewChatOpen} onChoose={chooseConversation} /><ContactActionModal target={contextTarget} onClose={() => setContextTarget(null)} onDeleted={() => setSelectedId(null)} />
     <GroupInfoDialog open={groupInfoOpen} onOpenChange={setGroupInfoOpen} conversationId={selected?.type === "group" ? selected.id : undefined} currentUserId={user?.id} />
     <CallDialog call={pendingCall.data && ["ringing", "connecting", "active"].includes(pendingCall.data.status) ? pendingCall.data as any : null} currentUserId={user?.id} onFinished={() => pendingCall.refetch()} />
     <InstallAppModal open={showGuide} onOpenChange={setShowGuide} isIOS={isIOS} />
