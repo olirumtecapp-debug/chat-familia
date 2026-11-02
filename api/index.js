@@ -1830,7 +1830,7 @@ var systemRouter = router({
 
 // server/routers/calls.ts
 import { TRPCError as TRPCError3 } from "@trpc/server";
-import { and, desc, eq as eq2, gt, inArray, or } from "drizzle-orm";
+import { and, desc, eq as eq2, gt, inArray, lt, or } from "drizzle-orm";
 import { z as z2 } from "zod";
 
 // server/realtime.ts
@@ -1870,6 +1870,20 @@ var callsRouter = router({
     if (members.length !== 2) throw new TRPCError3({ code: "BAD_REQUEST", message: "As chamadas individuais requerem dois participantes." });
     const receiverId = members.find((member) => member.userId !== ctx.user.id)?.userId;
     if (!receiverId) throw new TRPCError3({ code: "BAD_REQUEST" });
+    const staleCutoff = new Date(Date.now() - 25e3);
+    try {
+      await db.update(calls).set({ status: "ended", endedAt: /* @__PURE__ */ new Date() }).where(and(
+        inArray(calls.status, ["ringing", "connecting", "active"]),
+        or(
+          eq2(calls.callerId, ctx.user.id),
+          eq2(calls.receiverId, ctx.user.id),
+          eq2(calls.callerId, receiverId),
+          eq2(calls.receiverId, receiverId)
+        ),
+        lt(calls.startedAt, staleCutoff)
+      ));
+    } catch (_) {
+    }
     const busy = await db.select({ id: calls.id }).from(calls).where(and(inArray(calls.status, ["ringing", "connecting", "active"]), or(eq2(calls.callerId, receiverId), eq2(calls.receiverId, receiverId)))).limit(1);
     if (busy[0]) throw new TRPCError3({ code: "CONFLICT", message: "Esta pessoa j\xE1 est\xE1 em outra chamada." });
     const created = await db.insert(calls).values({ conversationId: input.conversationId, callerId: ctx.user.id, receiverId, type: input.type, status: "ringing" });
@@ -1879,6 +1893,31 @@ var callsRouter = router({
   }),
   pending: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDatabase();
+    const now = Date.now();
+    const ringingCutoff = new Date(now - 35e3);
+    try {
+      await db.update(calls).set({ status: "missed", endedAt: /* @__PURE__ */ new Date() }).where(and(
+        eq2(calls.status, "ringing"),
+        lt(calls.startedAt, ringingCutoff)
+      ));
+    } catch (_) {
+    }
+    const activeCutoff = new Date(now - 15e3);
+    try {
+      const activeCalls = await db.select({ id: calls.id, startedAt: calls.startedAt, answeredAt: calls.answeredAt }).from(calls).where(and(
+        inArray(calls.status, ["connecting", "active"]),
+        or(eq2(calls.callerId, ctx.user.id), eq2(calls.receiverId, ctx.user.id)),
+        lt(calls.startedAt, activeCutoff)
+      ));
+      for (const ac of activeCalls) {
+        const lastSignals = await db.select({ createdAt: callSignals.createdAt }).from(callSignals).where(eq2(callSignals.callId, ac.id)).orderBy(desc(callSignals.id)).limit(1);
+        const lastActivity = lastSignals[0]?.createdAt ? new Date(lastSignals[0].createdAt).getTime() : new Date(ac.answeredAt || ac.startedAt).getTime();
+        if (now - lastActivity > 15e3) {
+          await db.update(calls).set({ status: "ended", endedAt: /* @__PURE__ */ new Date() }).where(eq2(calls.id, ac.id));
+        }
+      }
+    } catch (_) {
+    }
     const current = await db.select({
       id: calls.id,
       conversationId: calls.conversationId,
@@ -1892,6 +1931,19 @@ var callsRouter = router({
       callerAvatar: users.avatarUrl
     }).from(calls).innerJoin(users, eq2(calls.callerId, users.id)).where(and(or(eq2(calls.callerId, ctx.user.id), eq2(calls.receiverId, ctx.user.id)), inArray(calls.status, ["ringing", "connecting", "active"]))).orderBy(desc(calls.startedAt)).limit(1);
     return current[0] ?? null;
+  }),
+  heartbeat: protectedProcedure.input(z2.object({ callId: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const { db, call } = await callWithAccess(input.callId, ctx.user.id);
+    if (["ended", "declined", "missed", "failed"].includes(call.status)) return { active: false };
+    const receiverId = call.callerId === ctx.user.id ? call.receiverId : call.callerId;
+    await db.insert(callSignals).values({
+      callId: input.callId,
+      senderId: ctx.user.id,
+      receiverId,
+      kind: "candidate",
+      payload: JSON.stringify({ type: "heartbeat", time: Date.now() })
+    });
+    return { active: true };
   }),
   respond: protectedProcedure.input(z2.object({ callId: z2.number().int().positive(), accept: z2.boolean() })).mutation(async ({ ctx, input }) => {
     const { db, call } = await callWithAccess(input.callId, ctx.user.id);
@@ -2003,7 +2055,7 @@ var groupsRouter = router({
 
 // server/routers/messaging.ts
 import { TRPCError as TRPCError5 } from "@trpc/server";
-import { and as and3, desc as desc2, eq as eq4, gt as gt2, inArray as inArray3, isNull, lt, ne as ne3, sql as sql2 } from "drizzle-orm";
+import { and as and3, desc as desc2, eq as eq4, gt as gt2, inArray as inArray3, isNull, lt as lt2, ne as ne3, sql as sql2 } from "drizzle-orm";
 import { z as z4 } from "zod";
 
 // server/media.ts
@@ -2285,7 +2337,7 @@ var messagingRouter = router({
     }).from(messages).innerJoin(users, eq4(messages.senderId, users.id)).leftJoin(messageDeletions, and3(eq4(messageDeletions.messageId, messages.id), eq4(messageDeletions.userId, ctx.user.id))).where(and3(
       eq4(messages.conversationId, input.conversationId),
       isNull(messageDeletions.messageId),
-      input.cursor ? lt(messages.createdAt, input.cursor) : sql2`1 = 1`
+      input.cursor ? lt2(messages.createdAt, input.cursor) : sql2`1 = 1`
     )).orderBy(desc2(messages.createdAt)).limit(40);
     const ids = entries.map((message) => message.id);
     const statuses = ids.length ? await db.select({ messageId: messageStatuses.messageId, status: messageStatuses.status }).from(messageStatuses).where(and3(inArray3(messageStatuses.messageId, ids), eq4(messageStatuses.userId, partnerId))) : [];

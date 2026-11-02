@@ -71,12 +71,12 @@ export function EmojiPickerComponent({ onSelectEmoji, className = "" }: EmojiPic
       </div>
 
       {activeTab === "standard" ? (
-        <div className="w-full h-[380px] overflow-hidden emoji-picker-container">
+        <div className="w-full h-[320px] overflow-hidden emoji-picker-container">
           <EmojiPicker
             theme={pickerTheme}
-            searchPlaceHolder="Pesquisar emoji..."
+            searchDisabled={true}
             width="100%"
-            height={380}
+            height={320}
             lazyLoadEmojis={true}
             previewConfig={{ showPreview: false }}
             categories={[
@@ -96,7 +96,7 @@ export function EmojiPickerComponent({ onSelectEmoji, className = "" }: EmojiPic
           />
         </div>
       ) : (
-        <div className="p-3 h-[380px] overflow-y-auto">
+        <div className="p-3 h-[320px] overflow-y-auto">
           <p className="text-[11px] text-[var(--muted)] mb-2 px-1">
             Toque para enviar o emoji com animação interativa no chat:
           </p>

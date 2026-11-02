@@ -21,6 +21,7 @@ export function CallDialog({ call, currentUserId, onFinished }: { call: ActiveCa
   const setActive = trpc.calls.setActive.useMutation({ onError: error => toast.error(error.message) });
   const sendSignal = trpc.calls.signal.useMutation();
   const end = trpc.calls.end.useMutation();
+  const heartbeat = trpc.calls.heartbeat.useMutation();
   const callId = call?.id;
   const callType = call?.type;
   const callStatus = call?.status;
@@ -202,6 +203,30 @@ export function CallDialog({ call, currentUserId, onFinished }: { call: ActiveCa
     return () => { cancelled = true; };
   }, [callId, emit, finish, flushCandidates, localReady, signals.data]);
 
+  // Heartbeat keep-alive every 4 seconds
+  useEffect(() => {
+    if (!callId || call?.status === "ended") return;
+    const interval = setInterval(() => {
+      heartbeat.mutate({ callId });
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [callId, call?.status]);
+
+  // Desconecta se fechar o navegador/aba
+  useEffect(() => {
+    const handleLeave = () => {
+      if (callId) {
+        void end.mutateAsync({ callId, reason: "ended" }).catch(() => {});
+      }
+    };
+    window.addEventListener("beforeunload", handleLeave);
+    window.addEventListener("pagehide", handleLeave);
+    return () => {
+      window.removeEventListener("beforeunload", handleLeave);
+      window.removeEventListener("pagehide", handleLeave);
+    };
+  }, [callId, end]);
+
   useEffect(() => () => cleanup(), [cleanup]);
 
   if (!call) return null;
@@ -212,9 +237,100 @@ export function CallDialog({ call, currentUserId, onFinished }: { call: ActiveCa
   const toggleCamera = () => { stream.current?.getVideoTracks().forEach(track => { track.enabled = !track.enabled; }); setCameraOff(value => !value); };
   const stateLabel = call.status === "ringing" ? (isCaller ? "Chamando..." : "Chamada recebida") : call.status === "connecting" ? "Conectando com segurança..." : `${Math.floor(elapsed / 60)}:${String(elapsed % 60).padStart(2, "0")}`;
 
-  return <div className={cn("call-overlay", call.type === "video" && "video-call")}><section className="call-window">
-    {call.type === "video" ? <div className="video-stage"><video ref={remoteVideo} autoPlay playsInline className="remote-video" /><video ref={localVideo} autoPlay muted playsInline className="local-video" />{!remoteReady && <div className="video-placeholder"><Avatar name={call.callerName} source={call.callerAvatar} /></div>}</div> : <><Avatar name={call.callerName} source={call.callerAvatar} /><h2>{isCaller ? "Chamada para" : "Chamada de"} {isCaller ? "contato" : call.callerName}</h2></>}
-    <p className="call-state">{call.status === "connecting" && !localReady && <Loader2 className="animate-spin" />} {stateLabel}</p>
-    {isReceiver && call.status === "ringing" ? <div className="incoming-actions"><Button variant="outline" onClick={decline}>Recusar</Button><Button onClick={accept} disabled={respond.isPending}>{respond.isPending ? <Loader2 className="animate-spin" /> : call.type === "video" ? <Video /> : <Mic />} Atender</Button></div> : <div className="call-controls"><Button variant="outline" size="icon" onClick={toggleMic} disabled={!localReady}>{muted ? <MicOff /> : <Mic />}</Button>{call.type === "video" && <Button variant="outline" size="icon" onClick={toggleCamera} disabled={!localReady}>{cameraOff ? <VideoOff /> : <Video />}</Button>}<Button variant="destructive" size="icon" onClick={hangup}><PhoneOff /></Button></div>}
-  </section></div>;
+  return (
+    <div className={cn("call-overlay", call.type === "video" && "video-call")}>
+      <section className="call-window">
+        {call.type === "video" ? (
+          <div className="video-stage">
+            <video ref={remoteVideo} autoPlay playsInline className="remote-video" />
+            <video ref={localVideo} autoPlay muted playsInline className="local-video" />
+            {!remoteReady && (
+              <div className="video-placeholder">
+                <Avatar name={call.callerName} source={call.callerAvatar} />
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <Avatar name={call.callerName} source={call.callerAvatar} />
+            <h2>{isCaller ? "Chamada para" : "Chamada de"} {isCaller ? "contato" : call.callerName}</h2>
+          </>
+        )}
+
+        <p className="call-state">
+          {call.status === "connecting" && !localReady && <Loader2 className="animate-spin" />} {stateLabel}
+        </p>
+
+        {isReceiver && call.status === "ringing" ? (
+          <div className="incoming-actions flex items-center gap-4 z-50">
+            <Button
+              variant="outline"
+              size="lg"
+              onClick={decline}
+              className="bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30 font-bold px-6 py-3 rounded-2xl flex items-center gap-2 cursor-pointer"
+            >
+              <PhoneOff className="w-5 h-5" /> Recusar
+            </Button>
+            <Button
+              size="lg"
+              onClick={accept}
+              disabled={respond.isPending}
+              className="bg-green-600 hover:bg-green-700 text-white font-bold px-8 py-3 rounded-2xl shadow-lg shadow-green-600/40 flex items-center gap-2 cursor-pointer"
+            >
+              {respond.isPending ? <Loader2 className="animate-spin w-5 h-5" /> : call.type === "video" ? <Video className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              Atender
+            </Button>
+          </div>
+        ) : isCaller && call.status === "ringing" ? (
+          <div className="call-controls flex flex-col items-center gap-2 z-50 mt-4">
+            <button
+              type="button"
+              onClick={hangup}
+              className="flex items-center gap-3 px-8 py-4 rounded-full bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold text-base shadow-xl shadow-red-600/50 transition-all cursor-pointer"
+              title="Cancelar chamada"
+            >
+              <PhoneOff className="w-6 h-6" />
+              <span>Cancelar Chamada</span>
+            </button>
+          </div>
+        ) : (
+          <div className="call-controls flex items-center justify-center gap-5 z-50">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={toggleMic}
+              disabled={!localReady}
+              className="w-13 h-13 rounded-full bg-slate-800/90 border-slate-600 text-white hover:bg-slate-700 shadow-md cursor-pointer"
+              title={muted ? "Ativar microfone" : "Silenciar microfone"}
+            >
+              {muted ? <MicOff className="w-6 h-6 text-red-400" /> : <Mic className="w-6 h-6" />}
+            </Button>
+
+            {call.type === "video" && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={toggleCamera}
+                disabled={!localReady}
+                className="w-13 h-13 rounded-full bg-slate-800/90 border-slate-600 text-white hover:bg-slate-700 shadow-md cursor-pointer"
+                title={cameraOff ? "Ligar câmera" : "Desligar câmera"}
+              >
+                {cameraOff ? <VideoOff className="w-6 h-6 text-red-400" /> : <Video className="w-6 h-6" />}
+              </Button>
+            )}
+
+            <button
+              type="button"
+              onClick={hangup}
+              className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-700 active:scale-95 text-white flex items-center justify-center shadow-xl shadow-red-600/50 transition-all cursor-pointer shrink-0"
+              title="Desligar chamada"
+              aria-label="Desligar chamada"
+            >
+              <PhoneOff className="w-7 h-7" />
+            </button>
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }

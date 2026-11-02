@@ -763,7 +763,7 @@ input::placeholder, textarea::placeholder {
 .call-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 1000;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -810,7 +810,7 @@ input::placeholder, textarea::placeholder {
 }
 .video-placeholder { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .video-call .call-state { z-index: 1; position: absolute; top: 22px; left: 24px; background: rgba(0, 0, 0, 0.45); padding: 7px 14px; border-radius: 20px; }
-.video-call .call-controls, .video-call .incoming-actions { z-index: 1; position: absolute; bottom: 25px; }
+.video-call .call-controls, .video-call .incoming-actions { z-index: 20; position: absolute; bottom: max(30px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: max-content; }
 .loading-screen { color: var(--accent); }
 
 @media(max-width: 760px) {

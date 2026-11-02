@@ -1,5 +1,5 @@
 import { TRPCError } from "@trpc/server";
-import { and, desc, eq, gt, inArray, ne, or } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, lt, ne, or } from "drizzle-orm";
 import { z } from "zod";
 import { callSignals, calls, conversationMembers, users } from "../../drizzle/schema";
 import { requireDatabase } from "../db";
@@ -24,6 +24,23 @@ export const callsRouter = router({
     const receiverId = members.find(member => member.userId !== ctx.user.id)?.userId;
     if (!receiverId) throw new TRPCError({ code: "BAD_REQUEST" });
 
+    // Limpa chamadas abandonadas antigas (>25s sem atividade) para não travar novas ligações
+    const staleCutoff = new Date(Date.now() - 25_000);
+    try {
+      await db.update(calls)
+        .set({ status: "ended", endedAt: new Date() })
+        .where(and(
+          inArray(calls.status, ["ringing", "connecting", "active"]),
+          or(
+            eq(calls.callerId, ctx.user.id),
+            eq(calls.receiverId, ctx.user.id),
+            eq(calls.callerId, receiverId),
+            eq(calls.receiverId, receiverId)
+          ),
+          lt(calls.startedAt, staleCutoff)
+        ));
+    } catch (_) {}
+
     const busy = await db.select({ id: calls.id }).from(calls).where(and(inArray(calls.status, ["ringing", "connecting", "active"]), or(eq(calls.callerId, receiverId), eq(calls.receiverId, receiverId)))).limit(1);
     if (busy[0]) throw new TRPCError({ code: "CONFLICT", message: "Esta pessoa já está em outra chamada." });
     const created = await db.insert(calls).values({ conversationId: input.conversationId, callerId: ctx.user.id, receiverId, type: input.type, status: "ringing" });
@@ -34,6 +51,44 @@ export const callsRouter = router({
 
   pending: protectedProcedure.query(async ({ ctx }) => {
     const db = await requireDatabase();
+    const now = Date.now();
+
+    // 1. Expira chamadas tocando sem resposta após 35 segundos
+    const ringingCutoff = new Date(now - 35_000);
+    try {
+      await db.update(calls)
+        .set({ status: "missed", endedAt: new Date() })
+        .where(and(
+          eq(calls.status, "ringing"),
+          lt(calls.startedAt, ringingCutoff)
+        ));
+    } catch (_) {}
+
+    // 2. Expira chamadas ativas/conectando abandonadas (sem sinal/heartbeat nos últimos 15s)
+    const activeCutoff = new Date(now - 15_000);
+    try {
+      const activeCalls = await db.select({ id: calls.id, startedAt: calls.startedAt, answeredAt: calls.answeredAt })
+        .from(calls)
+        .where(and(
+          inArray(calls.status, ["connecting", "active"]),
+          or(eq(calls.callerId, ctx.user.id), eq(calls.receiverId, ctx.user.id)),
+          lt(calls.startedAt, activeCutoff)
+        ));
+
+      for (const ac of activeCalls) {
+        const lastSignals = await db.select({ createdAt: callSignals.createdAt })
+          .from(callSignals)
+          .where(eq(callSignals.callId, ac.id))
+          .orderBy(desc(callSignals.id))
+          .limit(1);
+
+        const lastActivity = lastSignals[0]?.createdAt ? new Date(lastSignals[0].createdAt).getTime() : new Date(ac.answeredAt || ac.startedAt).getTime();
+        if (now - lastActivity > 15_000) {
+          await db.update(calls).set({ status: "ended", endedAt: new Date() }).where(eq(calls.id, ac.id));
+        }
+      }
+    } catch (_) {}
+
     const current = await db
       .select({
         id: calls.id, conversationId: calls.conversationId, callerId: calls.callerId, receiverId: calls.receiverId, type: calls.type, status: calls.status, startedAt: calls.startedAt, answeredAt: calls.answeredAt,
@@ -45,6 +100,20 @@ export const callsRouter = router({
       .orderBy(desc(calls.startedAt))
       .limit(1);
     return current[0] ?? null;
+  }),
+
+  heartbeat: protectedProcedure.input(z.object({ callId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+    const { db, call } = await callWithAccess(input.callId, ctx.user.id);
+    if (["ended", "declined", "missed", "failed"].includes(call.status)) return { active: false };
+    const receiverId = call.callerId === ctx.user.id ? call.receiverId : call.callerId;
+    await db.insert(callSignals).values({
+      callId: input.callId,
+      senderId: ctx.user.id,
+      receiverId,
+      kind: "candidate",
+      payload: JSON.stringify({ type: "heartbeat", time: Date.now() }),
+    });
+    return { active: true };
   }),
 
   respond: protectedProcedure.input(z.object({ callId: z.number().int().positive(), accept: z.boolean() })).mutation(async ({ ctx, input }) => {

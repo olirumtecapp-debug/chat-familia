@@ -1767,6 +1767,34 @@ export default function Home() {
   return <div className="app-shell">
     <aside className={cn("sidebar", !sidebarOpen && "mobile-hidden")}>
       <header className="sidebar-header"><button className="brand" onClick={() => setSelectedId(null)}><img className="brand-logo" src="/icon-192.png" alt="ChatForAll" /><span>ChatForAll</span></button><div className="header-tools"><button aria-label="Convidar amigo por link" onClick={() => setInviteModalOpen(true)} title="Convidar amigo com link pessoal"><UserPlus className="w-5 h-5 text-[#0080EA] dark:text-[#38BDF8]" /></button><button aria-label="Nova conversa" onClick={() => setNewChatOpen(true)}><Plus /></button><button className="mobile-only" aria-label="Fechar" onClick={() => setSidebarOpen(false)}><X /></button></div></header>
+      {showNotifBanner && (
+        <div className="bg-[#0080EA]/10 border-b border-[#0080EA]/20 px-3 py-2 flex items-center justify-between text-xs text-[var(--ink)]">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-[#0080EA] shrink-0" />
+            <span className="font-medium text-[11px]">Ativar notificações no celular?</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={async () => {
+                await requestNotification();
+                setShowNotifBanner(false);
+              }}
+              className="px-2.5 py-1 bg-[#0080EA] hover:bg-[#0070CE] text-white font-bold text-[11px] rounded-lg transition-all cursor-pointer"
+            >
+              Ativar
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowNotifBanner(false)}
+              className="p-1 text-[var(--muted)] hover:text-[var(--ink)] cursor-pointer"
+              aria-label="Dispensar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
       <button className="account-card" onClick={() => setProfileOpen(true)}>
         <Avatar name={profile.data.name} url={profile.data.avatarUrl} />
         <span className="flex-1 min-w-0 text-left">
