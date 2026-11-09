@@ -1667,14 +1667,6 @@ export default function Home() {
   const imageInput = useRef<HTMLInputElement>(null); const scroll = useRef<HTMLDivElement>(null); const knownIncoming = useRef(new Set<number>());
   const send = trpc.messaging.send.useMutation({ onSuccess: () => { playMessageSentSound(); setComposer(""); setReply(null); setImage(null); utils.messaging.history.invalidate(); utils.messaging.list.invalidate(); }, onError: error => toast.error(error.message) });
   const setTyping = trpc.messaging.setTyping.useMutation();
-  const resetData = (trpc.auth as any).resetAllData.useMutation({
-    onSuccess: () => {
-      toast.success('Banco de dados zerado com sucesso!');
-      logout();
-      window.location.reload();
-    },
-    onError: (err: any) => toast.error(err.message || 'Erro ao zerar dados.')
-  });
 
   useEffect(() => { if (conversations.data && selectedId === null && conversations.data[0]) setSelectedId(conversations.data[0].id); }, [conversations.data, selectedId]);
   useEffect(() => { setOlderMessages([]); setNextOlderCursor(null); }, [selectedId]);
@@ -1735,7 +1727,7 @@ export default function Home() {
     }
   }, [pendingCall.data, user?.id]);
   useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
-  useEffect(() => { if (!isAuthenticated) return; const source = new EventSource("/api/realtime"); source.onmessage = () => { utils.messaging.list.invalidate(); utils.messaging.history.invalidate(); utils.calls.pending.invalidate(); }; source.onerror = () => source.close(); return () => source.close(); }, [isAuthenticated]);
+  useEffect(() => { if (!isAuthenticated) return; const source = new EventSource("/api/realtime"); source.onmessage = () => { utils.messaging.list.invalidate(); utils.messaging.history.invalidate(); utils.calls.pending.invalidate(); }; source.onerror = () => { /* EventSource retries automatically after a transient failure. */ }; return () => source.close(); }, [isAuthenticated]);
   // When selected loads, clear the pending contact info
   useEffect(() => { if (selected) setPendingContact(null); }, [selected]);
   const displayedMessages = useMemo(() => [...olderMessages, ...(history.data?.messages || [])].filter((message, index, list) => list.findIndex(item => item.id === message.id) === index).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()), [olderMessages, history.data?.messages]);
@@ -1758,7 +1750,7 @@ export default function Home() {
       toast.error("Não foi possível preparar o arquivo.");
     }
   };
-  const submit = (caption = composer, media = image) => { if (!selectedId || send.isPending) return; send.mutate({ conversationId: selectedId, content: caption || undefined, replyToId: reply?.id, media: media ? { kind: media.kind, dataUrl: media.dataUrl, name: media.name } : undefined }); };
+  const submit = (caption = composer, media = image) => { if (!selectedId || send.isPending || (!caption.trim() && !media)) return; send.mutate({ conversationId: selectedId, content: caption.trim() || undefined, replyToId: reply?.id, media: media ? { kind: media.kind, dataUrl: media.dataUrl, name: media.name } : undefined }); };
   const typingChange = (value: string) => { setComposer(value); if (!selectedId) return; setTyping.mutate({ conversationId: selectedId, active: Boolean(value.trim()) }); };
   const requestNotification = async () => { if (!("Notification" in window)) return toast.error("Este navegador não suporta notificações."); const permission = await Notification.requestPermission(); permission === "granted" ? toast.success("Notificações ativadas.") : toast.message("As notificações permanecem desativadas."); };
   const startRecord = async () => { if (!selectedId || recording || recorder.current) return; recordGesture.current = true; try { if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") throw new Error("unsupported"); const stream = await navigator.mediaDevices.getUserMedia({ audio: true }); if (!recordGesture.current) { stream.getTracks().forEach(track => track.stop()); return; } const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"].find(type => MediaRecorder.isTypeSupported(type)); const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined); chunks.current = []; recordingTimeRef.current = 0; mediaRecorder.ondataavailable = event => { if (event.data.size) chunks.current.push(event.data); }; mediaRecorder.onerror = () => { stream.getTracks().forEach(track => track.stop()); recorder.current = null; setRecording(false); toast.error("A gravação de áudio foi interrompida."); }; mediaRecorder.onstop = async () => { stream.getTracks().forEach(track => track.stop()); if (timer.current) window.clearInterval(timer.current); const duration = recordingTimeRef.current; const blob = new Blob(chunks.current, { type: mediaRecorder.mimeType || "audio/webm" }); chunks.current = []; recorder.current = null; setRecording(false); setRecordingTime(0); if (!blob.size) return; try { const file = new File([blob], `mensagem-de-voz.${(mediaRecorder.mimeType || "audio/webm").includes("mp4") ? "m4a" : "webm"}`, { type: blob.type }); await send.mutateAsync({ conversationId: selectedId, media: { kind: "audio", dataUrl: await readFile(file), name: file.name, duration } }); } catch { toast.error("Não foi possível enviar o áudio. Tente novamente."); } }; recorder.current = mediaRecorder; mediaRecorder.start(250); setRecording(true); setRecordingTime(0); timer.current = window.setInterval(() => { recordingTimeRef.current += 1; setRecordingTime(recordingTimeRef.current); }, 1_000); } catch { recordGesture.current = false; toast.error("O acesso ao microfone foi negado ou indisponível."); } };
