@@ -2776,47 +2776,6 @@ var appRouter = router({
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
       return { user, token: sessionToken, sessionToken };
     }),
-    resetAllData: publicProcedure.mutation(async () => {
-      resetChatStore();
-      const dbInstance = await requireDatabase();
-      try {
-        await dbInstance.delete(callSignals);
-      } catch {
-      }
-      try {
-        await dbInstance.delete(calls);
-      } catch {
-      }
-      try {
-        await dbInstance.delete(typingStates);
-      } catch {
-      }
-      try {
-        await dbInstance.delete(messageStatuses);
-      } catch {
-      }
-      try {
-        await dbInstance.delete(messageDeletions);
-      } catch {
-      }
-      try {
-        await dbInstance.delete(messages);
-      } catch {
-      }
-      try {
-        await dbInstance.delete(conversationMembers);
-      } catch {
-      }
-      try {
-        await dbInstance.delete(conversations);
-      } catch {
-      }
-      try {
-        await dbInstance.delete(users);
-      } catch {
-      }
-      return { success: true };
-    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
