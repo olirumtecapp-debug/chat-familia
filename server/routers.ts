@@ -1,4 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+import crypto from "node:crypto";
+import { promisify } from "node:util";
+const scrypt = promisify(crypto.scrypt);
+const authAttempts = new Map<string, { count: number; until: number }>();
 import { COOKIE_NAME } from "@shared/const";
 import { ONE_YEAR_MS } from "@shared/const";
 import { TRPCError } from "@trpc/server";
@@ -73,54 +77,61 @@ export const appRouter = router({
         };
       }),
     localLogin: publicProcedure.input(z.object({
-      name: z.string().trim().min(2).max(120),
+      mode: z.enum(["signup", "login"]),
+      name: z.string().trim().max(120).optional(),
       email: z.string().trim().email().max(320),
-      familyCode: z.string().optional(),
-      password: z.string().optional(),
+      password: z.string().min(10).max(128),
       nickname: z.string().optional(),
       inviteBy: z.string().optional(),
     })).mutation(async ({ ctx, input }) => {
       const email = input.email.trim().toLowerCase();
-      let formattedNick: string | undefined = undefined;
-
-      if (input.nickname) {
-        const clean = input.nickname.toLowerCase().replace(/[^a-z0-9_]/g, "");
-        if (clean) {
-          formattedNick = `@${clean}`;
-          const dbInstance = await db.requireDatabase();
-          const existing = await dbInstance
-            .select({ id: users.id, email: users.email })
-            .from(users)
-            .where(eq(users.nickname as any, formattedNick))
-            .limit(1);
-
-          if (existing[0] && existing[0].email?.toLowerCase() !== email) {
-            const suggestions = [`${formattedNick}1`, `${formattedNick}2026`, `${formattedNick}_`];
-            throw new TRPCError({
-              code: "CONFLICT",
-              message: `O apelido ${formattedNick} já está em uso! Que tal ${suggestions.join(" ou ")}?`,
-            });
-          }
-        }
+      const key = crypto.createHash("sha256").update(email + ":" + (ctx.req.ip || "")).digest("hex");
+      const attempt = authAttempts.get(key);
+      if (attempt && attempt.count >= 8 && attempt.until > Date.now()) {
+        throw new TRPCError({ code: "TOO_MANY_REQUESTS", message: "Muitas tentativas. Aguarde 15 minutos." });
       }
-
-      const user = await db.upsertLocalUser({ name: input.name, email, nickname: formattedNick });
-      const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      return { user, sessionToken };
+      const database = await db.requireDatabase();
+      if (!process.env.DATABASE_URL) throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Cadastro indisponível: banco persistente não configurado." });
+      try {
+        await database.execute(sql.raw("CREATE TABLE IF NOT EXISTS auth_credentials (email varchar(320) NOT NULL PRIMARY KEY, password_hash varchar(255) NOT NULL, created_at timestamp DEFAULT CURRENT_TIMESTAMP)"));
+      } catch {
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Serviço de autenticação indisponível." });
+      }
+      const records: any = await database.execute(sql`SELECT password_hash FROM auth_credentials WHERE email = ${email} LIMIT 1`);
+      const rows: any[] = Array.isArray(records?.[0]) ? records[0] : (Array.isArray(records) ? records : []);
+      const existingHash = rows[0]?.password_hash as string | undefined;
+      const deny = () => {
+        const old = authAttempts.get(key);
+        authAttempts.set(key, { count: (old && old.until > Date.now() ? old.count : 0) + 1, until: Date.now() + 15 * 60_000 });
+        throw new TRPCError({ code: "UNAUTHORIZED", message: "E-mail ou senha inválidos." });
+      };
+      if (input.mode === "signup") {
+        if (!input.name?.trim()) throw new TRPCError({ code: "BAD_REQUEST", message: "Informe seu nome." });
+        if (existingHash || await db.getUserByEmail(email)) throw new TRPCError({ code: "CONFLICT", message: "Este e-mail já possui cadastro. Procure o suporte para recuperar uma conta antiga." });
+        const salt = crypto.randomBytes(16).toString("hex");
+        const hash = (await scrypt(input.password, salt, 64) as Buffer).toString("hex");
+        const user = await db.upsertLocalUser({ name: input.name, email, nickname: input.nickname });
+        await database.execute(sql`INSERT INTO auth_credentials (email, password_hash) VALUES (${email}, ${"scrypt:" + salt + ":" + hash})`);
+        authAttempts.delete(key);
+        const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: 24 * 60 * 60 * 1000 });
+        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req), maxAge: 24 * 60 * 60 * 1000 });
+        return { user };
+      }
+      if (!existingHash) return deny();
+      const parts = existingHash.split(":");
+      if (parts.length !== 3 || parts[0] !== "scrypt") return deny();
+      const hash = await scrypt(input.password, parts[1], 64) as Buffer;
+      const expected = Buffer.from(parts[2], "hex");
+      if (expected.length !== hash.length || !crypto.timingSafeEqual(hash, expected)) return deny();
+      const user = await db.getUserByEmail(email);
+      if (!user) return deny();
+      authAttempts.delete(key);
+      const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || "Usuário", expiresInMs: 24 * 60 * 60 * 1000 });
+      ctx.res.cookie(COOKIE_NAME, sessionToken, { ...getSessionCookieOptions(ctx.req), maxAge: 24 * 60 * 60 * 1000 });
+      return { user };
     }),
-    loginSimple: publicProcedure.input(z.object({
-      name: z.string().trim().min(2).max(120),
-      email: z.string().trim().email().max(320),
-      statusMessage: z.string().optional(),
-      avatarUrl: z.string().optional(),
-    })).mutation(async ({ ctx, input }) => {
-      const user = await db.upsertLocalUser({ name: input.name, email: input.email });
-      const sessionToken = await sdk.createSessionToken(user.openId, { name: user.name || input.name, expiresInMs: ONE_YEAR_MS });
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      return { user, token: sessionToken, sessionToken };
+    loginSimple: publicProcedure.mutation(() => {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Login antigo desativado. Utilize e-mail e senha." });
     }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
