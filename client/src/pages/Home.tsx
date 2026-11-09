@@ -166,12 +166,6 @@ function Welcome() {
 
   const login = trpc.auth.localLogin.useMutation({
     onSuccess: async (data: any) => {
-      const token = data?.sessionToken;
-      if (token) {
-        localStorage.setItem("chat_session_token", token);
-        sessionStorage.setItem("chat_session_token", token);
-        document.cookie = `app_session_id=${token}; path=/; max-age=31536000; SameSite=Lax; Secure`;
-      }
       if (data?.user) {
         utils.auth.me.setData(undefined, data.user);
       }
@@ -230,14 +224,14 @@ function Welcome() {
         return toast.error("O apelido escolhido já está em uso! Escolha uma das sugestões.");
       }
 
-      const finalEmail = cleanEmail.includes("@") ? cleanEmail : `${cleanUsername || cleanName.toLowerCase().replace(/\s+/g, "")}@chat.creativeam.com.br`;
-      login.mutate({ name: cleanName, email: finalEmail, nickname: cleanUsername, password: password || undefined, inviteBy: invitedBy || undefined });
+      if (!cleanEmail.includes("@")) return toast.error("Informe um e-mail válido.");
+      if (password.length < 10) return toast.error("A senha precisa ter pelo menos 10 caracteres.");
+      login.mutate({ mode: "signup", name: cleanName, email: cleanEmail, nickname: cleanUsername, password, inviteBy: invitedBy || undefined });
     } else {
       const cleanIdentifier = email.trim();
-      const cleanName = name.trim() || cleanIdentifier.split("@")[0] || "Usuário";
-      if (!cleanIdentifier) return toast.error("Informe seu e-mail ou apelido.");
-      const finalEmail = cleanIdentifier.includes("@") ? cleanIdentifier : `${cleanIdentifier.toLowerCase().replace(/[^a-z0-9_]/g, "")}@chat.creativeam.com.br`;
-      login.mutate({ name: cleanName, email: finalEmail, password: password || undefined });
+      if (!cleanIdentifier.includes("@")) return toast.error("Informe seu e-mail.");
+      if (!password) return toast.error("Informe sua senha.");
+      login.mutate({ mode: "login", email: cleanIdentifier, password });
     }
   };
 
@@ -367,9 +361,11 @@ function Welcome() {
               <input
                 value={password}
                 onChange={event => setPassword(event.target.value)}
-                placeholder="Criar senha de acesso (opcional)"
+                placeholder="Crie uma senha (mínimo 10 caracteres)"
                 type="password"
                 autoComplete="new-password"
+                required
+                minLength={10}
                 className="w-full h-12 pl-10 pr-3 rounded-xl bg-[var(--surface-soft)] border border-[var(--line)] text-sm text-[var(--ink)] placeholder:text-[var(--muted)] focus:border-[#0080EA] focus:ring-4 focus:ring-[#0080EA]/15 outline-none transition-all"
               />
             </div>
