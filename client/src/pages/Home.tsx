@@ -1667,14 +1667,6 @@ export default function Home() {
   const imageInput = useRef<HTMLInputElement>(null); const scroll = useRef<HTMLDivElement>(null); const knownIncoming = useRef(new Set<number>());
   const send = trpc.messaging.send.useMutation({ onSuccess: () => { playMessageSentSound(); setComposer(""); setReply(null); setImage(null); utils.messaging.history.invalidate(); utils.messaging.list.invalidate(); }, onError: error => toast.error(error.message) });
   const setTyping = trpc.messaging.setTyping.useMutation();
-  const resetData = (trpc.auth as any).resetAllData.useMutation({
-    onSuccess: () => {
-      toast.success('Banco de dados zerado com sucesso!');
-      logout();
-      window.location.reload();
-    },
-    onError: (err: any) => toast.error(err.message || 'Erro ao zerar dados.')
-  });
 
   useEffect(() => { if (conversations.data && selectedId === null && conversations.data[0]) setSelectedId(conversations.data[0].id); }, [conversations.data, selectedId]);
   useEffect(() => { setOlderMessages([]); setNextOlderCursor(null); }, [selectedId]);
@@ -1735,7 +1727,7 @@ export default function Home() {
     }
   }, [pendingCall.data, user?.id]);
   useEffect(() => () => { if (timer.current) window.clearInterval(timer.current); }, []);
-  useEffect(() => { if (!isAuthenticated) return; const source = new EventSource("/api/realtime"); source.onmessage = () => { utils.messaging.list.invalidate(); utils.messaging.history.invalidate(); utils.calls.pending.invalidate(); }; source.onerror = () => source.close(); return () => source.close(); }, [isAuthenticated]);
+  useEffect(() => { if (!isAuthenticated) return; const source = new EventSource("/api/realtime"); source.onmessage = () => { utils.messaging.list.invalidate(); utils.messaging.history.invalidate(); utils.calls.pending.invalidate(); }; source.onerror = () => { /* EventSource retries automatically after a transient failure. */ }; return () => source.close(); }, [isAuthenticated]);
   // When selected loads, clear the pending contact info
   useEffect(() => { if (selected) setPendingContact(null); }, [selected]);
   const displayedMessages = useMemo(() => [...olderMessages, ...(history.data?.messages || [])].filter((message, index, list) => list.findIndex(item => item.id === message.id) === index).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()), [olderMessages, history.data?.messages]);
